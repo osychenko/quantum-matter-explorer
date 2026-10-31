@@ -1,5 +1,6 @@
 """Numerical QMC core with configurable walker shapes and kinetic term."""
 
+from .cells import BCCCell, CubicCell, OrthorhombicCell, PeriodicCell
 from .dmc import DMCConfig, DMCResult, DMCTimestepPoint, run_dmc_importance, scan_dmc_dt
 from .potentials import harmonic_oscillator, yukawa_potential
 from .stats import Estimate, block_statistics
@@ -15,6 +16,7 @@ from .vmc import (
 )
 
 __all__ = [
+    "PeriodicCell", "OrthorhombicCell", "CubicCell", "BCCCell",
     "DMCConfig", "DMCResult", "DMCTimestepPoint", "run_dmc_importance", "scan_dmc_dt",
     "VMCConfig", "VMCResult", "VMCScanPoint", "ScanPoint2D",
     "run_vmc", "scan_parameter", "scan_alpha_beta",

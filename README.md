@@ -3,8 +3,8 @@
 An experimental, NumPy-based quantum Monte Carlo (QMC) engine intended to
 become the numerical foundation for an educational quantum-matter simulator.
 The numerical VMC/DMC engine now accepts arbitrary configuration shapes.
-Many-body bosonic trial states, periodic boundaries and educational visualizations
-are future milestones.
+Periodic simulation-cell geometry is now implemented independently of VMC/DMC.
+Many-body bosonic trial states and educational visualizations are future milestones.
 
 ## Current capabilities
 
@@ -14,6 +14,7 @@ are future milestones.
 - Block-based energy uncertainty estimates and timestep-convergence scans.
 - Headless Matplotlib diagnostics (PNG) and CSV exports.
 - A cusp-preserving trial wavefunction for the attractive 3D Yukawa problem.
+- Cubic, orthorhombic, general Bravais, and BCC/truncated-octahedral PBC geometry.
 
 The split/RK2 propagator is **not yet certified as second-order DMC**: its
 time-step convergence must be validated independently before relying on a
@@ -64,6 +65,7 @@ an independent analytic reference with an exact Gaussian trial.
 | `qmc/resampling.py` | Fixed-population systematic resampling |
 | `qmc/stats.py` | Block statistics |
 | `qmc/plotting.py` | PNG plots without a GUI |
+| `qmc/cells.py` | 3D periodic geometry, minimum-image distances, reciprocal vectors |
 | `examples/yukawa/run_yukawa.py` | End-to-end Yukawa experiment |
 | `tests/` | Fast scientific and data-format regression tests |
 
@@ -88,7 +90,60 @@ units. The default `D=0.5` preserves the original behavior. DMC uses drift
 `sqrt(2*D*dt)`. Existing trial-specific `local_energy()` shortcuts are only
 used for the original `D=0.5`; otherwise generic log-derivatives are used.
 
-**Not yet implemented:** periodic cells, pair interactions, Jastrow trial
+## Periodic simulation cells (Patch 3)
+
+Cell geometry lives in `qmc/cells.py`; the VMC/DMC propagators do not need
+periodic-specific code. Pair potentials, Jastrow factors, and observables
+should all use the **same** cell to calculate pair displacements:
+
+```python
+import numpy as np
+from qmc.cells import CubicCell, BCCCell
+
+box = CubicCell(10.0)
+r_i = np.array([9.0, 1.0, 1.0])
+r_j = np.array([1.0, 2.0, 1.0])
+dr = box.displacement(r_i, r_j)  # [2, 1, 0], not [-8, 1, 0]
+volume = box.volume                # 1000
+
+# BCC *translation lattice*. The Wigner-Seitz (Voronoi) cell is a
+# truncated octahedron; `length` is the conventional cubic lattice constant.
+to = BCCCell(10.0)
+assert np.isclose(to.volume, 500.0)
+inside_truncated_octahedron = to.wrap(r_i, centered=True)
+```
+
+Cell classes: `PeriodicCell(vectors)` for any nonsingular 3x3 lattice,
+`OrthorhombicCell((Lx, Ly, Lz))`, `CubicCell(L)`, and `BCCCell(L)`.
+The primitive lattice vectors are **rows** of `cell.vectors`; positions
+have Cartesian coordinates in the last array axis. Operations broadcast to
+arrays with shapes such as `(walkers, particles, 3)`.
+
+- `cell.wrap(r)` maps positions into the primitive parallelepiped.
+- `cell.wrap(r, centered=True)` maps to the Wigner-Seitz cell.
+- `cell.minimum_image(dr)` gives the shortest periodic image of `dr`.
+- `cell.displacement(r_i, r_j)` gives the shortest displacement from `i` to `j`.
+- `cell.volume` is the primitive simulation-cell volume.
+- `cell.reciprocal_vectors` provides reciprocal primitive vectors as rows;
+  `cell.wavevectors(indices)` returns requested allowed k-vectors.
+
+For the BCC cell, **periodicity is BCC** but the particles are not required to
+have BCC crystalline order. Its centered Wigner-Seitz region has the truncated-
+octahedral shape; default wrapping uses the equivalent primitive parallelepiped.
+The BCC minimum image is evaluated exactly by comparing integer and half-integer
+cubic translations. For general skew cells, the exact nearest translation can
+require more than componentwise rounding in fractional coordinates; the generic
+method therefore performs a bounded nearest-image search (slower than the
+specialized cubic/BCC methods).
+
+**Important:** this patch supplies geometry, not a physical periodic Hamiltonian.
+Periodic pair interactions, their cutoff/long-range-image treatment, and periodic
+many-body trial wavefunctions belong in the next physics milestone. In
+particular, merely wrapping DMC positions does not implement a periodic
+Hamiltonian, and minimum-image truncation alone is not sufficient for
+long-range Coulomb interactions.
+
+**Not yet implemented:** periodic pair interactions, Jastrow trial
 functions, particle-by-particle VMC proposals, and BEC/structure observables.
 The generic VMC proposal still moves all configuration coordinates at once;
 its efficiency for many particles will be improved in the next milestone.
@@ -102,8 +157,8 @@ distances. The independent-oscillator tests cover general `D` safely.
 
 1. **v0.1 cleanup**: packaging, documentation, CSV correctness, baseline tests.
 2. **v0.2 many-body-ready core**: generic walker configurations and explicit kinetic
-   coefficient, with existing single-particle examples preserved. Cell geometry
-   and periodic boundary conditions are the next independent milestone.
+   coefficient, with existing single-particle examples preserved. Periodic
+   geometry (Patch 3) is now available independently of the QMC algorithms.
 3. **Many-body examples**: repulsive bosons, Jastrow trials, PBC, pair correlation
    `g(r)` and static structure factor `S(k)`.
 4. **Quantum phases and coherence**: crystal/liquid energy branches, OBDM/BEC
