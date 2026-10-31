@@ -143,10 +143,35 @@ particular, merely wrapping DMC positions does not implement a periodic
 Hamiltonian, and minimum-image truncation alone is not sufficient for
 long-range Coulomb interactions.
 
-**Not yet implemented:** periodic pair interactions, Jastrow trial
-functions, particle-by-particle VMC proposals, and BEC/structure observables.
-The generic VMC proposal still moves all configuration coordinates at once;
-its efficiency for many particles will be improved in the next milestone.
+**Patch 4 — periodic soft-core bosons:** `qmc/bosons.py` provides a smooth,
+finite-range repulsive pair potential and a particle-exchange-symmetric Jastrow
+trial wavefunction with analytic gradient and Laplacian. Both use the periodic
+minimum-image convention. `VMCConfig(proposal_mode="particle")` proposes moves
+one particle at a time; a step is one complete sweep over all particles.
+The default `proposal_mode="all"` preserves the original single-particle and
+many-dimensional test workflows. For the new Jastrow trial, the particle
+proposal uses O(N) incremental logarithmic wavefunction ratios, rather than
+recomputing the O(N²) full pair product.
+
+**Run the small interacting-boson example:**
+
+```bash
+python3 -m examples.bosons.run_soft_core
+```
+
+It reports VMC energy per particle and sampling acceptance for eight bosons
+in a periodic cubic cell. This is an illustrative finite-range *soft-core*
+repulsion, not an unregularized Yukawa interaction. The compactly supported
+pair factor has two continuous derivatives at its cutoff, and both the
+interaction and Jastrow must use `cutoff <= cell inradius` (for a cubic box,
+`cutoff <= L/2`). For highly skew general cells, the cutoff validation uses a
+conservative singular-value bound. Pair sums use one minimum image per pair:
+this is not an Ewald or periodic-image-summed treatment of long-range forces.
+
+**Not yet implemented:** production many-body DMC methodology/benchmarks,
+structure observables `g(r)` and `S(k)`, BEC/OBDM estimators, and crystalline
+trial states. A smooth bounded repulsion alone does not guarantee a simple
+liquid-to-ordinary-crystal transition as parameters change.
 
 The current Yukawa cusp trial is tuned for `D=0.5`. With singular Coulomb-like
 pair or external potentials, the cusp condition itself depends on `D`; changing
@@ -159,8 +184,8 @@ distances. The independent-oscillator tests cover general `D` safely.
 2. **v0.2 many-body-ready core**: generic walker configurations and explicit kinetic
    coefficient, with existing single-particle examples preserved. Periodic
    geometry (Patch 3) is now available independently of the QMC algorithms.
-3. **Many-body examples**: repulsive bosons, Jastrow trials, PBC, pair correlation
-   `g(r)` and static structure factor `S(k)`.
+3. **Many-body examples**: Patch 4 supplies a periodic interacting-boson
+   baseline; next add pair correlation `g(r)` and static structure factor `S(k)`.
 4. **Quantum phases and coherence**: crystal/liquid energy branches, OBDM/BEC
    estimators, and finite-size/time-step analysis.
 5. **Education layer**: interactive visualizations, learning missions, saved

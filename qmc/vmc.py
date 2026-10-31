@@ -107,6 +107,7 @@ class VMCConfig:
     seed: int = 12345
     configuration_shape: tuple[int, ...] = (3,)
     kinetic_coefficient: float = 0.5
+    proposal_mode: str = "all"  # "all" (legacy) or "particle" (one full sweep per step)
 
 
 @dataclass
@@ -152,8 +153,10 @@ def run_vmc(
     """
     Metropolis VMC sampling |Psi_T|^2.
 
-    For many-body configurations, this version moves all coordinates at once;
-    particle-by-particle proposals will be introduced in a later patch.
+    Use proposal_mode="particle" for a sweep of N one-particle moves per step,
+    instead of the legacy proposal_mode="all" that moves all coordinates.
+    If the trial offers log_ratio_particle_move(), only pairs involving the
+    moved particle need recalculating, otherwise full log(Psi) is evaluated.
 
     The energy history contains the mean local energy
     across walkers at each measurement step.
@@ -174,6 +177,8 @@ def run_vmc(
         )
 
     require_positive_kinetic(config.kinetic_coefficient)
+    if config.proposal_mode not in {"all", "particle"}:
+        raise ValueError("proposal_mode must be 'all' or 'particle'")
 
     rng = np.random.default_rng(
         config.seed
@@ -186,6 +191,14 @@ def run_vmc(
     )
 
     n_walkers = len(walkers)
+    if config.proposal_mode == "particle":
+        if walkers.ndim != 3 or walkers.shape[-1] != 3:
+            raise ValueError(
+                "proposal_mode='particle' requires "
+                "configuration_shape=(n_particles, 3)"
+            )
+        if hasattr(trial, "cell"):
+            walkers = trial.cell.wrap(walkers)
 
     log_psi = np.asarray(
         trial.log_psi(walkers),
@@ -231,58 +244,53 @@ def run_vmc(
         # Proposal
         # ----------------------------------------------------
 
-        proposed = (
-            walkers
-            + sigma
-            * rng.normal(
-                size=walkers.shape
-            )
-        )
-
-        log_psi_proposed = np.asarray(
-            trial.log_psi(proposed),
-            dtype=np.float64,
-        )
-
-        # ----------------------------------------------------
-        # Metropolis acceptance for |Psi|^2
-        # ----------------------------------------------------
-
-        log_acceptance = np.minimum(
-            0.0,
-            2.0
-            * (
-                log_psi_proposed
-                - log_psi
-            ),
-        )
-
-        accepted = (
-            np.log(
-                rng.random(
-                    n_walkers
+        if config.proposal_mode == "all":
+            # Original full-configuration Metropolis proposal; preserved for
+            # single-particle examples and existing many-body regressions.
+            proposed = walkers + sigma * rng.normal(size=walkers.shape)
+            log_psi_proposed = np.asarray(trial.log_psi(proposed), dtype=np.float64)
+            log_acceptance = np.minimum(0.0, 2.0 * (log_psi_proposed - log_psi))
+            accepted = np.log(rng.random(n_walkers)) < log_acceptance
+            walkers[accepted] = proposed[accepted]
+            log_psi[accepted] = log_psi_proposed[accepted]
+            rate = float(np.mean(accepted))
+        else:
+            # One sweep = one proposal for each particle, per walker.
+            # Adaptation/measurements occur once per complete sweep.
+            n_particles = walkers.shape[1]
+            accepted_total = 0
+            for particle in range(n_particles):
+                candidate = (
+                    walkers[:, particle, :]
+                    + sigma * rng.normal(size=(n_walkers, 3))
                 )
-            )
-            < log_acceptance
-        )
+                if hasattr(trial, "cell"):
+                    candidate = trial.cell.wrap(candidate)
 
-        # ----------------------------------------------------
-        # Accept moves
-        # ----------------------------------------------------
+                fast_ratio = hasattr(trial, "log_ratio_particle_move")
+                if fast_ratio:
+                    log_ratio = np.asarray(
+                        trial.log_ratio_particle_move(walkers, particle, candidate),
+                        dtype=np.float64,
+                    )
+                else:
+                    proposed = walkers.copy()
+                    proposed[:, particle, :] = candidate
+                    proposed_log_psi = np.asarray(
+                        trial.log_psi(proposed), dtype=np.float64
+                    )
+                    log_ratio = proposed_log_psi - log_psi
 
-        walkers[accepted] = (
-            proposed[accepted]
-        )
-
-        log_psi[accepted] = (
-            log_psi_proposed[
-                accepted
-            ]
-        )
-
-        rate = float(
-            np.mean(accepted)
-        )
+                if log_ratio.shape != (n_walkers,) or not np.all(np.isfinite(log_ratio)):
+                    raise ValueError("Particle move log-ratio must be a finite (n_walkers,) array")
+                accepted = np.log(rng.random(n_walkers)) < np.minimum(0.0, 2.0 * log_ratio)
+                walkers[accepted, particle, :] = candidate[accepted]
+                if fast_ratio:
+                    log_psi[accepted] += log_ratio[accepted]
+                else:
+                    log_psi[accepted] = proposed_log_psi[accepted]
+                accepted_total += int(np.count_nonzero(accepted))
+            rate = accepted_total / (n_walkers * n_particles)
 
         acceptance.append(
             rate
