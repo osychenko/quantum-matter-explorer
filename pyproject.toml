@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quantum-matter-explorer"
-version = "0.1.0"
+version = "0.2.0.dev0"
 description = "Experimental quantum Monte Carlo engine for educational quantum matter simulations"
 readme = "README.md"
 requires-python = ">=3.10"

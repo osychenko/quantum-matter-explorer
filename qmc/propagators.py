@@ -1,6 +1,7 @@
 import numpy as np
 
 from .evaluation import evaluate_trial_quantities
+from .configuration import configuration_norm2, walker_broadcast_mask, require_positive_kinetic
 
 
 def drift_diffusion_metropolis(
@@ -12,6 +13,8 @@ def drift_diffusion_metropolis(
     trial,
     dt,
     rng,
+    *,
+    kinetic_coefficient=0.5,
 ):
     """
     First-order drift-diffusion proposal with
@@ -19,12 +22,14 @@ def drift_diffusion_metropolis(
 
     Proposal:
 
-        R' = R + dt * grad(log Psi_T) + sqrt(dt) * eta
+        R' = R + 2*D*dt * grad(log Psi_T) + sqrt(2*D*dt) * eta
 
     Returns the post-accept/reject state.
     """
 
     n_walkers = len(walkers)
+    D = require_positive_kinetic(kinetic_coefficient)
+    drift_dt = 2.0 * D * dt
 
     # --------------------------------------------------------
     # Drift-diffusion proposal
@@ -32,8 +37,8 @@ def drift_diffusion_metropolis(
 
     proposed = (
         walkers
-        + dt * drift
-        + np.sqrt(dt)
+        + drift_dt * drift
+        + np.sqrt(2.0 * D * dt)
         * rng.normal(size=walkers.shape)
     )
 
@@ -45,6 +50,7 @@ def drift_diffusion_metropolis(
         potential,
         trial,
         proposed,
+        kinetic_coefficient=D,
     )
 
     # --------------------------------------------------------
@@ -54,28 +60,21 @@ def drift_diffusion_metropolis(
     forward = (
         proposed
         - walkers
-        - dt * drift
+        - drift_dt * drift
     )
 
     reverse = (
         walkers
         - proposed
-        - dt * drift_p
+        - drift_dt * drift_p
     )
 
-    forward_sq = np.sum(
-        forward * forward,
-        axis=1,
-    )
-
-    reverse_sq = np.sum(
-        reverse * reverse,
-        axis=1,
-    )
+    forward_sq = configuration_norm2(forward)
+    reverse_sq = configuration_norm2(reverse)
 
     log_green_ratio = (
-        -0.5
-        / dt
+        -1.0
+        / (4.0 * D * dt)
         * (
             reverse_sq
             - forward_sq
@@ -118,7 +117,7 @@ def drift_diffusion_metropolis(
     # --------------------------------------------------------
 
     new_walkers = np.where(
-        accepted[:, None],
+        walker_broadcast_mask(accepted, walkers.ndim),
         proposed,
         walkers,
     )
@@ -130,7 +129,7 @@ def drift_diffusion_metropolis(
     )
 
     new_drift = np.where(
-        accepted[:, None],
+        walker_broadcast_mask(accepted, walkers.ndim),
         drift_p,
         drift,
     )
@@ -156,6 +155,8 @@ def drift_diffusion_second_order(
     trial,
     dt,
     rng,
+    *,
+    kinetic_coefficient=0.5,
 ):
     """
     Symmetric second-order split propagator:
@@ -178,20 +179,23 @@ def drift_diffusion_second_order(
     # --------------------------------------------------------
     # 1. Half diffusion
     #
-    # Full diffusion has variance dt, therefore half
-    # diffusion has variance dt/2.
+    # Full diffusion has coordinate variance 2*D*dt,
+    # therefore half diffusion has coordinate variance D*dt.
     # --------------------------------------------------------
+
+    D = require_positive_kinetic(kinetic_coefficient)
+    drift_dt = 2.0 * D * dt
 
     y = (
         walkers
-        + np.sqrt(0.5 * dt)
+        + np.sqrt(D * dt)
         * rng.normal(size=walkers.shape)
     )
 
     # --------------------------------------------------------
     # 2. Drift flow using second-order midpoint RK2
     #
-    # dR / dtau = grad(log Psi_T)
+    # dR / dtau = 2*D*grad(log Psi_T)
     # --------------------------------------------------------
 
     drift_y = np.asarray(
@@ -208,7 +212,7 @@ def drift_diffusion_second_order(
 
     midpoint = (
         y
-        + 0.5 * dt * drift_y
+        + 0.5 * drift_dt * drift_y
     )
 
     drift_mid = np.asarray(
@@ -225,7 +229,7 @@ def drift_diffusion_second_order(
 
     z = (
         y
-        + dt * drift_mid
+        + drift_dt * drift_mid
     )
 
     # --------------------------------------------------------
@@ -234,7 +238,7 @@ def drift_diffusion_second_order(
 
     proposed = (
         z
-        + np.sqrt(0.5 * dt)
+        + np.sqrt(D * dt)
         * rng.normal(size=walkers.shape)
     )
 
@@ -250,6 +254,7 @@ def drift_diffusion_second_order(
         potential,
         trial,
         proposed,
+        kinetic_coefficient=D,
     )
 
     # There is no acceptance probability in this propagator.

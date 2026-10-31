@@ -9,6 +9,7 @@ from .evaluation import evaluate_trial_quantities
 from .resampling import systematic_resample
 from .stats import Estimate, block_statistics
 from .propagators import drift_diffusion_second_order, drift_diffusion_metropolis
+from .configuration import initial_configuration_walkers, require_positive_kinetic
 
 Array = np.ndarray
 
@@ -39,6 +40,8 @@ class DMCConfig:
     seed: int = 12345
     log_interval: int = 500
     scheme: str = "metropolis"
+    configuration_shape: tuple[int, ...] = (3,)
+    kinetic_coefficient: float = 0.5
 
 @dataclass
 class DMCResult:
@@ -72,12 +75,13 @@ def _mean_or_nan(values):
 
 
 def _initial_walkers(config: DMCConfig, rng, initial_walkers=None):
-    if initial_walkers is None:
-        return rng.normal(0.0, config.initial_sigma, size=(config.n_walkers, 3))
-    walkers = np.asarray(initial_walkers, dtype=np.float64).copy()
-    if walkers.ndim != 2 or walkers.shape[1] != 3:
-        raise ValueError("initial_walkers must have shape (N_walkers, 3)")
-    return walkers
+    return initial_configuration_walkers(
+        n_walkers=config.n_walkers,
+        configuration_shape=config.configuration_shape,
+        initial_sigma=config.initial_sigma,
+        rng=rng,
+        initial_walkers=initial_walkers,
+    )
 
 
 def _adapt_dt(
@@ -208,6 +212,8 @@ def run_dmc_importance(
                 "adaptation_steps=0."
             )
 
+    require_positive_kinetic(config.kinetic_coefficient)
+
     rng = np.random.default_rng(
         config.seed
     )
@@ -226,6 +232,7 @@ def run_dmc_importance(
         potential,
         trial,
         walkers,
+        kinetic_coefficient=config.kinetic_coefficient,
     )
 
     e_ref = float(
@@ -288,6 +295,7 @@ def run_dmc_importance(
                 trial,
                 dt,
                 rng,
+                kinetic_coefficient=config.kinetic_coefficient,
             )
 
         else:
@@ -304,6 +312,7 @@ def run_dmc_importance(
                 trial,
                 dt,
                 rng,
+                kinetic_coefficient=config.kinetic_coefficient,
             )
 
         acceptance_history.append(

@@ -1,4 +1,4 @@
-"""Numerical QMC prototype (single-particle API until the many-body refactor)."""
+"""Numerical QMC core with configurable walker shapes and kinetic term."""
 
 from .dmc import DMCConfig, DMCResult, DMCTimestepPoint, run_dmc_importance, scan_dmc_dt
 from .potentials import harmonic_oscillator, yukawa_potential

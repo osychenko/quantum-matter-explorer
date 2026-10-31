@@ -8,6 +8,7 @@ import numpy as np
 
 from .evaluation import evaluate_local_energy
 from .stats import Estimate, block_statistics
+from .configuration import initial_configuration_walkers, require_positive_kinetic
 
 Array = np.ndarray
 
@@ -104,6 +105,8 @@ class VMCConfig:
     adapt_rate: float = 0.5
     initial_sigma: float = 1.5
     seed: int = 12345
+    configuration_shape: tuple[int, ...] = (3,)
+    kinetic_coefficient: float = 0.5
 
 
 @dataclass
@@ -130,16 +133,13 @@ class VMCScanPoint:
 
 
 def _initial_walkers(config: VMCConfig, rng, initial_walkers=None):
-    if initial_walkers is None:
-        return rng.normal(
-            0.0,
-            config.initial_sigma,
-            size=(config.n_walkers, 3),
-        )
-    walkers = np.asarray(initial_walkers, dtype=np.float64).copy()
-    if walkers.ndim != 2 or walkers.shape[1] != 3:
-        raise ValueError("initial_walkers must have shape (N_walkers, 3)")
-    return walkers
+    return initial_configuration_walkers(
+        n_walkers=config.n_walkers,
+        configuration_shape=config.configuration_shape,
+        initial_sigma=config.initial_sigma,
+        rng=rng,
+        initial_walkers=initial_walkers,
+    )
 
 
 def run_vmc(
@@ -151,6 +151,9 @@ def run_vmc(
 ) -> VMCResult:
     """
     Metropolis VMC sampling |Psi_T|^2.
+
+    For many-body configurations, this version moves all coordinates at once;
+    particle-by-particle proposals will be introduced in a later patch.
 
     The energy history contains the mean local energy
     across walkers at each measurement step.
@@ -169,6 +172,8 @@ def run_vmc(
         raise ValueError(
             "sample_every must be positive"
         )
+
+    require_positive_kinetic(config.kinetic_coefficient)
 
     rng = np.random.default_rng(
         config.seed
@@ -342,6 +347,7 @@ def run_vmc(
                     potential,
                     trial,
                     walkers,
+                    kinetic_coefficient=config.kinetic_coefficient,
                 )
             )
 
