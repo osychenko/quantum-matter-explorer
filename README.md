@@ -169,8 +169,7 @@ conservative singular-value bound. Pair sums use one minimum image per pair:
 this is not an Ewald or periodic-image-summed treatment of long-range forces.
 
 **Not yet implemented:** production many-body DMC methodology/benchmarks,
-structure observables `g(r)` and `S(k)`, BEC/OBDM estimators, and crystalline
-trial states. A smooth bounded repulsion alone does not guarantee a simple
+BEC/OBDM estimators, and crystalline trial states. A smooth bounded repulsion alone does not guarantee a simple
 liquid-to-ordinary-crystal transition as parameters change.
 
 The current Yukawa cusp trial is tuned for `D=0.5`. With singular Coulomb-like
@@ -185,11 +184,31 @@ distances. The independent-oscillator tests cover general `D` safely.
    coefficient, with existing single-particle examples preserved. Periodic
    geometry (Patch 3) is now available independently of the QMC algorithms.
 3. **Many-body examples**: Patch 4 supplies a periodic interacting-boson
-   baseline; next add pair correlation `g(r)` and static structure factor `S(k)`.
+   baseline; Patch 5 adds pair correlation `g(r)` and static structure factor
+   `S(k)` as production-sampled observables.
 4. **Quantum phases and coherence**: crystal/liquid energy branches, OBDM/BEC
    estimators, and finite-size/time-step analysis.
 5. **Education layer**: interactive visualizations, learning missions, saved
    experiments, and guided diagnostics.
+
+## Patch 5 — structural observables and cell visualization
+
+The `qmc.observables` module supplies normalized `PairCorrelation` and
+reciprocal-lattice `StaticStructureFactor` accumulators for VMC/DMC production
+walkers. The optional `observables=(g, s)` keyword argument makes it possible
+to collect time-series samples during either solver rather than only analyzing
+the final walkers. For DMC, `observable_stride=10` may reduce overhead.
+
+Run the plot-producing example:
+
+```bash
+python3 -m examples.bosons.run_observables
+```
+
+It writes a 3D cell snapshot, `g(r)` and directional `S(k)` scatter plots to
+`outputs/bosons/`. BCC cell snapshots show a truncated-octahedral boundary.
+Read [docs/observables.md](docs/observables.md) for finite-size normalization,
+statistical caveats, and important differences between VMC and DMC estimators.
 
 ## Licensing
 

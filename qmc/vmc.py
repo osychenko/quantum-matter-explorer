@@ -149,6 +149,7 @@ def run_vmc(
     config: VMCConfig = VMCConfig(),
     *,
     initial_walkers=None,
+    observables=(),
 ) -> VMCResult:
     """
     Metropolis VMC sampling |Psi_T|^2.
@@ -358,6 +359,11 @@ def run_vmc(
                     kinetic_coefficient=config.kinetic_coefficient,
                 )
             )
+
+            # Accumulate production-sampled diagonal observables independently
+            # of the energy history. Hooks must not mutate the walker array.
+            for observable in observables:
+                observable.accumulate(walkers)
 
             # -----------------------------------------------
             # Energy history:

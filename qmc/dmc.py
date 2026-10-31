@@ -149,6 +149,8 @@ def run_dmc_importance(
     config: DMCConfig = DMCConfig(),
     *,
     initial_walkers=None,
+    observables=(),
+    observable_stride: int = 1,
 ) -> DMCResult:
     """
     Importance-sampled fixed-population DMC.
@@ -211,6 +213,10 @@ def run_dmc_importance(
                 "For scheme='second_order', set "
                 "adaptation_steps=0."
             )
+
+    if (not isinstance(observable_stride, (int, np.integer))
+            or observable_stride < 1):
+        raise ValueError("observable_stride must be a positive integer")
 
     require_positive_kinetic(config.kinetic_coefficient)
 
@@ -495,6 +501,11 @@ def run_dmc_importance(
                     np.mean(e_local)
                 )
             )
+
+            # Post-resampling DMC walkers sample the mixed distribution.
+            if (step - config.equilibration_steps) % observable_stride == 0:
+                for observable in observables:
+                    observable.accumulate(walkers)
 
         # ====================================================
         # 7. Logging
