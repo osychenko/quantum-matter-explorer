@@ -210,6 +210,31 @@ It writes a 3D cell snapshot, `g(r)` and directional `S(k)` scatter plots to
 Read [docs/observables.md](docs/observables.md) for finite-size normalization,
 statistical caveats, and important differences between VMC and DMC estimators.
 
+## Patch 6 — variational density-wave exploration
+
+An exchange-symmetric density-wave-enhanced Jastrow trial and an independent-
+validation parameter scan now provide a first comparison of a liquid-like
+baseline (`lambda=0`) and a density-modulated candidate (`lambda>0`). The
+control parameter `gamma = V0*rc**2/D` varies repulsion relative to kinetic
+fluctuations at fixed reduced density `rho*rc**3`.
+
+```bash
+python3 -m examples.bosons.run_phase_scan --quick
+# Larger scan:
+python3 -m examples.bosons.run_phase_scan
+```
+
+Results are saved to `outputs/bosons/phase_scan/`, including grid training
+energies, independently seeded validation replicas, structure factors at
+preselected reciprocal modes, pair correlations, cell snapshots, and a scan
+figure. See [docs/phase_scans.md](docs/phase_scans.md) for the ansatz, physics,
+and statistical limitations.
+
+**Caution:** selected density-wave peaks or finite-size variational-energy
+crossings do not establish a liquid–solid phase transition. Soft-core
+interactions may favor cluster ordering; distinguish ordinary crystals from
+cluster crystals by additional correlations and finite-size studies.
+
 ## Licensing
 
 No license has been selected yet. A public GitHub repository does **not** by
