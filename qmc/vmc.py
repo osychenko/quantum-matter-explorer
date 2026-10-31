@@ -582,6 +582,7 @@ def save_dmc_dt_scan(
 
         for p in points:
             writer.writerow([
+                p.scheme,
                 p.dt,
                 p.mixed.mean,
                 p.mixed.stderr,

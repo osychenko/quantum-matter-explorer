@@ -1,13 +1,24 @@
-from .dmc import DMCConfig, DMCResult, run_dmc_importance
-from .potentials import yukawa_potential, harmonic_oscillator
+"""Numerical QMC prototype (single-particle API until the many-body refactor)."""
+
+from .dmc import DMCConfig, DMCResult, DMCTimestepPoint, run_dmc_importance, scan_dmc_dt
+from .potentials import harmonic_oscillator, yukawa_potential
 from .stats import Estimate, block_statistics
-from .trials import GaussianTrial, ExponentialTrial, YukawaExponentialTrial
-from .vmc import VMCConfig, VMCResult, VMCScanPoint, run_vmc, scan_parameter
+from .trials import GaussianTrial, ExponentialTrial, YukawaExponentialTrial, YukawaCuspTrial
+from .vmc import (
+    VMCConfig,
+    VMCResult,
+    VMCScanPoint,
+    ScanPoint2D,
+    run_vmc,
+    scan_parameter,
+    scan_alpha_beta,
+)
 
 __all__ = [
-    "DMCConfig", "DMCResult", "run_dmc_importance",
-    "VMCConfig", "VMCResult", "VMCScanPoint", "run_vmc", "scan_parameter",
+    "DMCConfig", "DMCResult", "DMCTimestepPoint", "run_dmc_importance", "scan_dmc_dt",
+    "VMCConfig", "VMCResult", "VMCScanPoint", "ScanPoint2D",
+    "run_vmc", "scan_parameter", "scan_alpha_beta",
     "Estimate", "block_statistics",
-    "GaussianTrial", "ExponentialTrial", "YukawaExponentialTrial",
+    "GaussianTrial", "ExponentialTrial", "YukawaExponentialTrial", "YukawaCuspTrial",
     "yukawa_potential", "harmonic_oscillator",
 ]
