@@ -42,11 +42,20 @@ def plan_budget(method, cell, potential, base, *, target_seconds, pilot_steps=30
         raise ValueError('pilot_steps must be integer >=8')
     if type(seed) is not int or seed < 0:
         raise ValueError('seed must be nonnegative integer')
-    cfg = replace(base,seed=seed, n_steps=max(200,pilot_steps+20),burn_in=10)
+    # For realistic pilots, time the same observable/diagnostic workload as
+    # validation. Short legacy pilots remain supported for smoke tests.
+    realistic = pilot_steps >= 160
+    cfg = replace(base, seed=seed,
+                  n_steps=pilot_steps if realistic else max(200,pilot_steps+20),
+                  burn_in=min(pilot_steps//4, 400) if realistic else 10,
+                  thin=2)
     sampler = make_sampler(method,cell,potential,cfg)
     t=time.process_time()
-    for _ in range(pilot_steps):
-        sampler.step()
+    if realistic:
+        audit_worm_chain(sampler, n_blocks=4)
+    else:
+        for _ in range(pilot_steps):
+            sampler.step()
     dt=time.process_time()-t
     if not np.isfinite(dt) or dt <= 0:
         raise RuntimeError('invalid measured CPU time')
