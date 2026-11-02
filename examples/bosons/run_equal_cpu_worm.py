@@ -60,9 +60,11 @@ def _map_validations(tasks, workers, pool=None):
 
 
 def run_experiment(output='outputs/bosons/equal_cpu_worm',*,quick=False,
-                   cpu_seconds=None,replicas=None,links=None,workers=1,pilot_steps=None):
+                   cpu_seconds=None,replicas=None,links=None,workers=1,pilot_steps=None,calibration_factor=1.25):
     if type(workers) is not int or not 1 <= workers <= 64:
         raise ValueError('workers must be an integer in [1,64]')
+    if not np.isfinite(calibration_factor) or calibration_factor <= 0:
+        raise ValueError('calibration_factor must be positive finite')
     if pilot_steps is not None and (type(pilot_steps) is not int or pilot_steps < 8):
         raise ValueError('pilot_steps must be an integer >=8')
     pilot_size = (12 if quick else 400) if pilot_steps is None else pilot_steps
@@ -79,15 +81,21 @@ def run_experiment(output='outputs/bosons/equal_cpu_worm',*,quick=False,
     if not grids or any(type(m) is not int or m<4 or m%2 for m in grids):
         raise ValueError('links must be even integers >=4')
     pilot=[]; runs=[]; summaries=[];refs=[]
+    reference_values={}
     # A single process pool is reused across every method/grid to avoid paying
     # worker startup costs repeatedly. Pilot CPU calibration stays serial.
     context = nullcontext(None) if workers == 1 else ProcessPoolExecutor(max_workers=workers, mp_context=get_context('spawn'))
     with context as pool:
         for M in grids:
-            # K=1 is a finite-basis reference, NOT an exact continuum result.
-            ref=TwoBosonAdditionReference(cell_length=cell.length,height=height,cutoff=cutoff,k_max=1,n_grid=16)
-            expected=float(ref.measure(beta,[beta/2],((0,0,0),)).green[0,0])
-            refs.append({'M':M,'beta':beta,'k_max':1,'reference':expected})
+            # Spectral-basis checks are independent of the sampling method.
+            # Reuse across time grids because beta and Hamiltonian are fixed.
+            if not reference_values:
+                for k in (1,2):
+                    ref=TwoBosonAdditionReference(cell_length=cell.length,height=height,cutoff=cutoff,k_max=k,n_grid=16)
+                    reference_values[k]=float(ref.measure(beta,[beta/2],((0,0,0),)).green[0,0])
+            expected=reference_values[2]
+            for k in (1,2):
+                refs.append({'M':M,'beta':beta,'k_max':k,'reference':reference_values[k]})
             base=ReplicaExchangeConfig(n_links=M,time_step=beta/M,
                  n_steps=200,burn_in=40,thin=2,sector_fugacity=.9,
                  hot_interaction_fraction=.25,swap_probability=.3)
@@ -96,7 +104,8 @@ def run_experiment(output='outputs/bosons/equal_cpu_worm',*,quick=False,
                 plan=plan_budget(method,cell,pot,base,target_seconds=target,
                     pilot_steps=pilot_size,seed=pilot_seed,
                     min_validation_steps=160 if quick else 800,
-                    max_validation_steps=600 if quick else 100000)
+                    max_validation_steps=600 if quick else 100000,
+                    calibration_factor=calibration_factor)
                 pilot.append({'M':M,**asdict(plan)})
                 tasks=_validation_tasks(method,cell,pot,base,plan,M,beta,expected,count)
                 group=_map_validations(tasks,workers,pool)
@@ -105,8 +114,8 @@ def run_experiment(output='outputs/bosons/equal_cpu_worm',*,quick=False,
                 s['M']=M;s['beta']=beta
                 summaries.append(s)
                 print(f'M={M} {method:8s} G={s["mean_green"]:.3f} +/- {s["replica_sem"]:.3f} '
-                      f'exact_K1={expected:.3f} CPU={s["mean_cpu_seconds"]:.2f}s '
-                      f'ESS/CPU={s["mean_ess_per_cpu"]:.1f} [{s["status"]}]', flush=True)
+                      f'spectral_K2={expected:.3f} CPU={s["mean_cpu_seconds"]:.2f}s '
+                      f'ESS/CPU={s["mean_ess_per_cpu"]:.1f} [{s["status"]}; CPU {s["cpu_status"]}]', flush=True)
     csv_write(out/'pilots.csv',pilot);csv_write(out/'replicas.csv',runs)
     csv_write(out/'summary.csv',summaries);csv_write(out/'spectral_reference.csv',refs)
     fig,ax=plt.subplots(figsize=(7,4))
@@ -114,7 +123,7 @@ def run_experiment(output='outputs/bosons/equal_cpu_worm',*,quick=False,
         ss=sorted((s for s in summaries if s['method']==method),key=lambda x:x['M'])
         ax.errorbar([s['M'] for s in ss],[s['mean_green'] for s in ss],
                     yerr=[s['replica_sem'] for s in ss],marker='o',capsize=3,label=method)
-    ax.axhline(refs[0]['reference'],linestyle='--',color='gray',label='spectral K=1')
+    ax.axhline(reference_values[2],linestyle='--',color='gray',label='spectral K=2')
     ax.set(xlabel='Number of imaginary-time links (beta fixed)',ylabel='G0(beta/2)',title='Held-out, pilot-calibrated CPU budgets')
     ax.grid(alpha=.2);ax.legend();fig.tight_layout();fig.savefig(out/'accuracy.png',dpi=140);plt.close(fig)
     fig,ax=plt.subplots(figsize=(7,4))
@@ -129,11 +138,13 @@ def run_experiment(output='outputs/bosons/equal_cpu_worm',*,quick=False,
         json.dump({'model':'N=1->2 3D continuum canonical addition worm',
           'beta':beta,'cutoff':cutoff,'height':height,'links':grids,'cpu_target_per_chain':target,
           'replicas':count,'workers':workers,'pilot_steps':pilot_size,
+          'calibration_factor':calibration_factor,'spectral_reference_K1':reference_values[1],
+          'spectral_reference_K2':reference_values[2],
           'total_wall_seconds':total_wall_seconds,
           'total_validation_cpu_seconds':total_validation_cpu_seconds,
           'total_pilot_cpu_seconds':float(sum(p['pilot_seconds'] for p in pilot)),
           'baseline_and_exchange':'both evaluated independently, all cold samples only',
-          'limitations':'CPU budget approximate; K=1 finite basis; no claim of convergence; autocorrelation may be underestimated'},f,indent=2)
+          'limitations':'CPU budget approximate; K=1 and K=2 finite spectral bases; no convergence proof; autocorrelation may be underestimated'},f,indent=2)
     print(f'Workers={workers} | total wall time={total_wall_seconds:.2f}s | '
           f'validation CPU sum={total_validation_cpu_seconds:.2f}s',flush=True)
     return pilot,runs,summaries
@@ -145,7 +156,9 @@ def main():
     p.add_argument('--links',nargs='+',type=int)
     p.add_argument('--workers',type=int,default=1,
                    help='Independent validation processes (default: 1)')
+    p.add_argument('--calibration-factor',type=float,default=1.25,
+                   help='Conservative CPU calibration correction (default: 1.25)')
     p.add_argument('--pilot-steps',type=int,
                    help='Independent CPU calibration steps (default: 400, or 12 in --quick)')
-    a=p.parse_args();run_experiment(a.output,quick=a.quick,cpu_seconds=a.cpu_seconds,replicas=a.replicas,links=a.links,workers=a.workers,pilot_steps=a.pilot_steps)
+    a=p.parse_args();run_experiment(a.output,quick=a.quick,cpu_seconds=a.cpu_seconds,replicas=a.replicas,links=a.links,workers=a.workers,pilot_steps=a.pilot_steps,calibration_factor=a.calibration_factor)
 if __name__=='__main__':main()
