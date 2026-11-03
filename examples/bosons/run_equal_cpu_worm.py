@@ -33,17 +33,24 @@ def csv_write(path, rows):
 
 def _validation_task(task):
     """Picklable independent worker; all task inputs and the RNG are local."""
-    method, cell, potential, base, plan, seed, M, beta, reference = task
-    result = run_validation(method, cell, potential, base, plan, seed=seed)
+    method, cell, potential, base, plan, seed, M, beta, reference = task[:9]
+    trace_dir = task[9] if len(task) > 9 else None
+    trace_path = (str(Path(trace_dir) / f"M{M}_{method}_seed{seed}.npz")
+                  if trace_dir is not None else None)
+    result = run_validation(method, cell, potential, base, plan, seed=seed,
+                            **({"trace_path": trace_path} if trace_path is not None else {}))
     result.update(M=M, beta=beta, spectral_reference=reference)
     return result
 
 
-def _validation_tasks(method, cell, potential, base, plan, M, beta, reference, replicas):
+def _validation_tasks(method, cell, potential, base, plan, M, beta, reference, replicas, trace_dir=None, seed_offset=0):
     """Use Patch 28's unchanged, disjoint deterministic validation seeds."""
     return [
         (method, cell, potential, base, plan,
-         300000 + M*10000 + (0 if method == 'baseline' else 1000) + i,
+         300000 + seed_offset + M*10000 + (0 if method == 'baseline' else 1000) + i,
+         M, beta, reference, trace_dir) if trace_dir is not None else
+        (method, cell, potential, base, plan,
+         300000 + seed_offset + M*10000 + (0 if method == 'baseline' else 1000) + i,
          M, beta, reference)
         for i in range(replicas)
     ]
@@ -60,7 +67,9 @@ def _map_validations(tasks, workers, pool=None):
 
 
 def run_experiment(output='outputs/bosons/equal_cpu_worm',*,quick=False,
-                   cpu_seconds=None,replicas=None,links=None,workers=1,pilot_steps=None,calibration_factor=1.25):
+                   cpu_seconds=None,replicas=None,links=None,workers=1,pilot_steps=None,calibration_factor=1.25,save_traces=False,seed_offset=0):
+    if type(seed_offset) is not int or seed_offset < 0 or seed_offset > 100000000:
+        raise ValueError('seed_offset must be an integer in [0,100000000]')
     if type(workers) is not int or not 1 <= workers <= 64:
         raise ValueError('workers must be an integer in [1,64]')
     if not np.isfinite(calibration_factor) or calibration_factor <= 0:
@@ -81,6 +90,7 @@ def run_experiment(output='outputs/bosons/equal_cpu_worm',*,quick=False,
     if not grids or any(type(m) is not int or m<4 or m%2 for m in grids):
         raise ValueError('links must be even integers >=4')
     pilot=[]; runs=[]; summaries=[];refs=[]
+    trace_dir = str(out / "traces") if save_traces else None
     reference_values={}
     # A single process pool is reused across every method/grid to avoid paying
     # worker startup costs repeatedly. Pilot CPU calibration stays serial.
@@ -107,7 +117,7 @@ def run_experiment(output='outputs/bosons/equal_cpu_worm',*,quick=False,
                     max_validation_steps=600 if quick else 100000,
                     calibration_factor=calibration_factor)
                 pilot.append({'M':M,**asdict(plan)})
-                tasks=_validation_tasks(method,cell,pot,base,plan,M,beta,expected,count)
+                tasks=_validation_tasks(method,cell,pot,base,plan,M,beta,expected,count,trace_dir,seed_offset)
                 group=_map_validations(tasks,workers,pool)
                 runs.extend(group)
                 s=summarize_validation(group,expected)
@@ -138,6 +148,8 @@ def run_experiment(output='outputs/bosons/equal_cpu_worm',*,quick=False,
         json.dump({'model':'N=1->2 3D continuum canonical addition worm',
           'beta':beta,'cutoff':cutoff,'height':height,'links':grids,'cpu_target_per_chain':target,
           'replicas':count,'workers':workers,'pilot_steps':pilot_size,
+          'traces_saved':bool(save_traces),'trace_directory':trace_dir,
+          'validation_seed_offset':seed_offset,
           'calibration_factor':calibration_factor,'spectral_reference_K1':reference_values[1],
           'spectral_reference_K2':reference_values[2],
           'total_wall_seconds':total_wall_seconds,
@@ -154,11 +166,15 @@ def main():
     p.add_argument('--quick',action='store_true');p.add_argument('--output',default='outputs/bosons/equal_cpu_worm')
     p.add_argument('--cpu-seconds',type=float);p.add_argument('--replicas',type=int)
     p.add_argument('--links',nargs='+',type=int)
+    p.add_argument('--seed-offset',type=int,default=0,
+                   help='Add to validation seed IDs; use nonzero for new independent runs')
+    p.add_argument('--save-traces',action='store_true',
+                   help='Write compressed midpoint zero-mode per-chain measurement traces')
     p.add_argument('--workers',type=int,default=1,
                    help='Independent validation processes (default: 1)')
     p.add_argument('--calibration-factor',type=float,default=1.25,
                    help='Conservative CPU calibration correction (default: 1.25)')
     p.add_argument('--pilot-steps',type=int,
                    help='Independent CPU calibration steps (default: 400, or 12 in --quick)')
-    a=p.parse_args();run_experiment(a.output,quick=a.quick,cpu_seconds=a.cpu_seconds,replicas=a.replicas,links=a.links,workers=a.workers,pilot_steps=a.pilot_steps,calibration_factor=a.calibration_factor)
+    a=p.parse_args();run_experiment(a.output,quick=a.quick,cpu_seconds=a.cpu_seconds,replicas=a.replicas,links=a.links,workers=a.workers,pilot_steps=a.pilot_steps,calibration_factor=a.calibration_factor,save_traces=a.save_traces,seed_offset=a.seed_offset)
 if __name__=='__main__':main()

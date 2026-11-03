@@ -66,7 +66,7 @@ def plan_budget(method, cell, potential, base, *, target_seconds, pilot_steps=30
     n=max(min_validation_steps,min(max_validation_steps,n))
     return BudgetPlan(method,float(target_seconds),pilot_steps,float(dt),n,seed,float(calibration_factor))
 
-def run_validation(method,cell,potential,base,plan,*, seed, n_blocks=8):
+def run_validation(method,cell,potential,base,plan,*, seed, n_blocks=8, trace_path=None):
     """One new fixed-length chain. Returns observable and CPU diagnostics."""
     if method != plan.method or seed == plan.seed or type(seed) is not int or seed < 0:
         raise ValueError('validation method/seed must differ from calibration')
@@ -79,6 +79,10 @@ def run_validation(method,cell,potential,base,plan,*, seed, n_blocks=8):
     used_blocks=min(n_blocks,max(4,measurements//8))
     audit=audit_worm_chain(sampler,n_blocks=used_blocks)
     dt=max(time.process_time()-start,np.finfo(float).tiny)
+    if trace_path is not None:
+        from .worm_trace_diagnostics import write_trace
+        write_trace(trace_path, audit, method=method, seed=seed, links=cfg.n_links,
+                    beta=cfg.beta, fugacity=cfg.sector_fugacity)
     midpoint=cfg.n_links//2-1
     g=float(audit.green[midpoint,0]); sem=float(audit.jackknife_stderr[midpoint,0])
     ess=float(audit.ratio_ess[midpoint,0]); raw=float(audit.green_raw[midpoint,0])

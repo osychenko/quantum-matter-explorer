@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import numpy as np
 from qmc.finite_step_validation import ProjectedPrimitiveReference, compare_replicas, continuum_fit
+from qmc.green_spectral import TwoBosonAdditionReference
 
 
 def read_csv(path):
@@ -49,13 +50,17 @@ def run_analysis(summary_path, replicas_path, *, output='outputs/bosons/finite_s
         result['projected_primitive_difference']=result['mean_green']-refmap[M,k]
         audit.append(result)
     fits=[]
+    spectral_reference = None
+    if fit and len(grids) >= 3:
+        spectral_reference = float(TwoBosonAdditionReference(k_max=max(k_max), n_grid=n_grid)
+                                   .measure(beta, [beta/2], ((0,0,0),)).green[0,0])
     if fit:
         for method in ('baseline','exchange'):
             for power in (1,2):
                 if len(grids)>=3:
-                    fits.append(continuum_fit(summaries,method=method,power=power))
+                    fits.append(continuum_fit(summaries,method=method,power=power,reference=spectral_reference))
                 if len(grids)>=4:
-                    fits.append(continuum_fit(summaries,method=method,power=power,exclude=(min(grids),)))
+                    fits.append(continuum_fit(summaries,method=method,power=power,exclude=(min(grids),),reference=spectral_reference))
     write_csv(out/'projected_primitive.csv',refs)
     write_csv(out/'replica_diagnostics.csv',audit)
     write_csv(out/'continuum_fits.csv',fits)
