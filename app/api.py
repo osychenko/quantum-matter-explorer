@@ -7,13 +7,17 @@ are exposed to HTTP clients.
 from __future__ import annotations
 
 from typing import Any
+from threading import BoundedSemaphore
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from qmc.educational_science import science_map
 from qmc.educational_contract import (
     SCHEMA_VERSION, ENGINE_RELEASE, catalog, run_experiment, validate_result,
 )
+
+_LIVE_VMC_SLOT = BoundedSemaphore(1)  # local-first bounded computations
 
 app = FastAPI(
     title="Quantum Matter Explorer — Educational API",
@@ -45,6 +49,15 @@ def health():
             "engine_release": ENGINE_RELEASE, "execution": "local_analytic_and_recorded_only"}
 
 
+@app.get("/api/v1/science-map")
+def science():
+    """Curated questions, physics concepts, methods, and parameter metadata.
+
+    Research-only cards are descriptive; they do not unlock simulations.
+    """
+    return science_map()
+
+
 @app.get("/api/v1/experiments")
 def experiments():
     return {"schema_version": SCHEMA_VERSION, "presets": catalog()}
@@ -52,12 +65,19 @@ def experiments():
 
 @app.post("/api/v1/experiments/{preset_id}/run")
 def run(preset_id: str, request: RunRequest):
+    live = preset_id in {'harmonic-oscillator-vmc-v1', 'softcore-structure-vmc-v1'}
+    if live and not _LIVE_VMC_SLOT.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail='The local VMC laboratory is busy; retry when it finishes')
     try:
-        result = run_experiment(preset_id, request.parameters)
-        validate_result(result)
-        return result
-    except ValueError as exc:
-        raise _bad_input(exc) from exc
+        try:
+            result = run_experiment(preset_id, request.parameters)
+            validate_result(result)
+            return result
+        except ValueError as exc:
+            raise _bad_input(exc) from exc
+    finally:
+        if live:
+            _LIVE_VMC_SLOT.release()
 
 
 @app.post("/api/v1/experiments/ideal-boson-addition-v1/sweep")

@@ -5,6 +5,7 @@ import {
   recordCompletion, totalXp, type EngineObservation, type Finding,
   type Mission, type MissionId, type MissionProgress, type Prediction,
 } from './missionEngine';
+import {learningSteps, missionStage, observedOutcome, RESEARCH_GLOSSARY} from './missionExperience';
 
 type Props = {progress:MissionProgress; onProgress:(next:MissionProgress)=>void; storageWarning:string};
 
@@ -63,11 +64,17 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
   const [newlyCompleted,setNewlyCompleted]=useState(false);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState('');
+  const [showGuide,setShowGuide]=useState(true);
+  const [showGlossary,setShowGlossary]=useState(false);
+  const [playtest,setPlaytest]=useState({confusing:'',learned:'',next:''});
   const controller=useRef<AbortController|null>(null);
   const mission=MISSIONS.find(m=>m.id===active)!;
   const completion=progress.completions.find(c=>c.missionId===active);
   const badges=earnedBadges(progress);
   const xp=totalXp(progress);
+  const stage=missionStage(prediction,finding,feedback);
+  const steps=learningSteps(stage);
+  const stageIndex=steps.findIndex(s=>s.id===stage);
 
   useEffect(()=>()=>controller.current?.abort(),[active]);
   const selectMission=(id:MissionId)=>{
@@ -76,7 +83,12 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
     controller.current?.abort();
     setActive(id);setPrediction(null);setFinding(null);setInterpretation('');
     setResearchNote('');setFeedback(false);setNewlyCompleted(false);setLoading(false);setError('');
-    window.requestAnimationFrame(()=>document.getElementById('mission-chapter')?.scrollIntoView({block:'start',behavior:'smooth'}));
+    window.requestAnimationFrame(()=>{
+      const heading=document.getElementById('mission-title');
+      heading?.focus({preventScroll:true});
+      document.getElementById('mission-chapter')?.scrollIntoView({block:'start',
+        behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+    });
   };
   const reveal=async()=>{
     if (!prediction || loading || finding) return;
@@ -111,9 +123,17 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
       <div className="mission-dashboard-lead"><span className="eyebrow">RESEARCH RANK</span><h2>{xp===160?'Quantum Explorer':xp>=80?'Field Researcher':xp>0?'Junior Investigator':'New Researcher'}</h2>
         <p>{progress.completions.length} of {MISSIONS.length} investigations completed · {xp} research XP</p></div>
       <div className="mission-dashboard-meter"><div className="mission-meter-line"><span>Expedition progress</span><strong>{Math.round(100*progress.completions.length/MISSIONS.length)}%</strong></div>
-        <div className="mission-meter"><div style={{width:`${100*progress.completions.length/MISSIONS.length}%`}}/></div>
+        <div className="mission-meter" role="progressbar" aria-label="Expedition completion" aria-valuemin={0} aria-valuemax={MISSIONS.length} aria-valuenow={progress.completions.length}><div style={{width:`${100*progress.completions.length/MISSIONS.length}%`}}/></div>
         <span className="mission-mini-note">{XP_PER_MISSION} XP per completed investigation · No extra points for a “correct” guess</span>
       </div>
+    </div>
+    <div className="mission-guide panel" aria-label="How to play">
+      <div className="mission-guide-head"><div><span className="eyebrow">FIRST TIME HERE?</span><h2>Your research field guide</h2></div>
+        <button type="button" className="outline" aria-expanded={showGuide} onClick={()=>setShowGuide(v=>!v)}>{showGuide?'Hide guide':'Show guide'}</button></div>
+      {showGuide&&<div className="mission-guide-body"><p><strong>No physics background required.</strong> Start by choosing a prediction. Reveal evidence from a real analytical control or a labeled historical recording. Then select the explanation that fits the evidence and optionally write a note. Wrong predictions are welcome: the objective is scientific reasoning.</p>
+        <p><strong>Helpful distinction:</strong> A 3D scene illustrates the model; its moving graphics are not real-time quantum trajectories. A recorded Monte Carlo benchmark does not update when you change the analytical sliders.</p>
+        <button type="button" className="mission-text-button" aria-expanded={showGlossary} onClick={()=>setShowGlossary(v=>!v)}>{showGlossary?'Hide terminology':'Explain the physics terms'} </button>
+        {showGlossary&&<dl className="mission-glossary">{RESEARCH_GLOSSARY.map(g=><div key={g.term}><dt>{g.term}</dt><dd>{g.definition}</dd></div>)}</dl>}</div>}
     </div>
     <div className="mission-layout">
       <section className="panel mission-map">
@@ -139,9 +159,12 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
         <p className="mission-mini-note">Progress lives only in this browser. Export it to keep a copy; this preview does not support importing a journal.</p>
         {storageWarning&&<p className="mission-caution" role="status">{storageWarning}</p>}
       </section>
-      <section id="mission-chapter" className="panel mission-active" key={mission.id}>
+      <section id="mission-chapter" className="panel mission-active" key={mission.id} aria-labelledby="mission-title">
         <div className="mission-active-top"><span className="eyebrow">CHAPTER {String(mission.chapter).padStart(2,'0')} / {MISSIONS.length}</span><span className="mission-xp">+{XP_PER_MISSION} XP</span></div>
-        <h2>{mission.title}</h2><p className="mission-story">{mission.story}</p>
+        <h2 id="mission-title" tabIndex={-1}>{mission.title}</h2>
+        <nav className="mission-process" aria-label="Mission stages"><ol>{steps.map((item,i)=><li key={item.id} className={i<stageIndex?'done':i===stageIndex?'current':'upcoming'} aria-current={i===stageIndex?'step':undefined}><span>{i<stageIndex?'✓':i+1}</span><strong>{item.title}</strong></li>)}</ol></nav>
+        <p className="mission-stage-help" role="status">{steps[stageIndex].detail}.</p>
+        <p className="mission-story">{mission.story}</p>
         {completion&&<div className="mission-complete-note">✓ Expedition completed on {new Date(completion.completedAt).toLocaleDateString()}. You may replay this investigation; XP is awarded once.</div>}
         <div className="mission-question"><span className="mission-section-label">01 / PREDICT FIRST</span><h3>{mission.hypothesis}</h3>
           <fieldset disabled={!!finding||loading} className="mission-radio-set"><legend className="sr-only">Choose your prediction</legend>
@@ -153,9 +176,10 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
             onClick={()=>void reveal()}>{loading?'Collecting evidence…':mission.evidence.some(e=>e.mode==='recorded_result')?'Reveal curated evidence':'Run analytical controls'}</button>
           {!finding&&<p className="mission-mini-note">Choose before revealing the results. Both correct and incorrect hypotheses are valuable.</p>}
         </div>
-        {error&&<p role="alert" className="error">{error}</p>}
+        {error&&<div role="alert" className="mission-error"><strong>Evidence could not be collected.</strong><p>{error}</p><p>Your prediction is preserved. Check that the local API server is running, then try collecting evidence again.</p></div>}
         {finding&&<>
           <EvidencePanel finding={finding} mission={mission}/>
+          <p className="mission-observation-explanation"><strong>In plain language:</strong> {observedOutcome(mission,finding)}</p>
           <div className="mission-question"><span className="mission-section-label">03 / INTERPRET</span><h3>{mission.interpretQuestion}</h3>
             <fieldset className="mission-radio-set" disabled={feedback}><legend className="sr-only">Choose an interpretation</legend>
               {mission.interpretations.map(choice=><label key={choice.id} className={`mission-option ${interpretation===choice.id?'chosen':''}`}>
@@ -164,7 +188,8 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
             </fieldset>
             <label htmlFor={`mission-note-${mission.id}`} className="mission-note-label">Research notebook note <span>(optional, maximum 400 characters)</span></label>
             <textarea id={`mission-note-${mission.id}`} rows={3} maxLength={400} disabled={feedback}
-              placeholder="What surprised you? What would you test next?" value={researchNote} onChange={e=>setResearchNote(e.target.value)}/>
+              placeholder="What surprised you? What would you test next?" value={researchNote} onChange={(e:{target:{value:string}})=>setResearchNote(e.target.value)}/>
+            <span className="mission-mini-note" aria-live="off">{researchNote.length}/400 characters · You can leave this blank.</span>
             <button type="button" className="primary mission-action" disabled={!interpretation||feedback} onClick={complete}>
               Record discovery {completion?'(replay)':''}
             </button>
@@ -174,11 +199,33 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
           <span className="eyebrow">DISCOVERY RECORDED</span><h3>{matched?'Your hypothesis matched the observation.':'Your hypothesis was challenged—that is how science progresses.'}</h3>
           <p>{answeredCorrectly?'Your interpretation matches the evidence.':'There is a stronger explanation to consider:'}</p>
           <p>{mission.lesson}</p><p className="mission-caution">{mission.caution}</p>
+          <p className="mission-next-question"><strong>Think like a scientist:</strong> What additional evidence or control would make this conclusion stronger? Your optional field note can describe a next experiment.</p>
           <div className="mission-reveal-actions"><strong>{newlyCompleted?`+${XP_PER_MISSION} research XP`:'XP was earned on your first completion'}</strong>
             {MISSIONS[mission.chapter]&&<button className="outline" type="button" onClick={()=>selectMission(MISSIONS[mission.chapter].id)}>Next mission →</button>}</div>
         </div>}
       </section>
     </div>
+    <section className="panel mission-playtest" aria-labelledby="mission-playtest-title">
+      <span className="eyebrow">FIELD TEST / OPTIONAL</span><h2 id="mission-playtest-title">Help shape the next expedition</h2>
+      <p>What was confusing, what did you learn, and what would you explore next? No account and no automatic submission: your answers stay in this tab unless you export them and choose to share the file.</p>
+      <div className="mission-playtest-fields">
+        {([
+          ['confusing','What was confusing or difficult?'],
+          ['learned','What new idea did you learn?'],
+          ['next','What would you like to investigate next?'],
+        ] as const).map(([key,label])=><label key={key}>{label}
+          <textarea rows={2} maxLength={500} value={playtest[key]}
+            onChange={(e:{target:{value:string}})=>setPlaytest(prev=>({...prev,[key]:e.target.value}))}/>
+        </label>)}
+      </div>
+      <button type="button" className="outline" disabled={!Object.values(playtest).some(value=>value.trim())}
+        onClick={()=>exportJson('qme-playtest-feedback.json',{
+          schema_version:'1',kind:'optional_local_playtest',
+          completed_missions:progress.completions.length,answers:playtest,
+          privacy_note:'No identifying information requested; file saved locally, not submitted',
+        })}>↓ Export my feedback</button>
+      <p className="mission-mini-note">Please do not enter names, email addresses or other personal details. Only share exported feedback if you choose to.</p>
+    </section>
     <section className="panel mission-principles"><span className="eyebrow">THE RESEARCHER'S CODE</span><h2>Progress means better questions, not perfect guesses.</h2>
       <p>Each mission uses a curated analytical result or an explicitly identified historical numerical benchmark. No task asserts a phase transition, mistakes imaginary-time paths for real motion, or presents a recorded QMC result as a live simulation. Achievements are educational milestones, not certifications of physical accuracy.</p>
     </section>

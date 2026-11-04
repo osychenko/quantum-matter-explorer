@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import QuantumCell3D, {type QuantumView} from './QuantumCell3D';
 import MissionBoard from './MissionBoard';
+import ExpandedPhysicsLab, {OSC,STRUCT,type LiveResult} from './ExpandedPhysicsLab';
+import ScienceMapPage, {ScienceBrief, ScienceInspector, type ScienceMapData} from './ScienceMap';
 import {MISSION_PROGRESS_KEY, validatedProgress, totalXp, type MissionProgress} from './missionEngine';
 import './missions.css';
 
@@ -69,6 +71,10 @@ function Graph({sweep, current}: {sweep: Sweep | null; current: number}) {
 
 export default function App() {
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [scienceData, setScienceData] = useState<ScienceMapData | null>(null);
+  const [expandedResult, setExpandedResult] = useState<LiveResult|null>(null);
+  const [matchedIdeal, setMatchedIdeal] = useState<Result|null>(null);
+  const [scienceError, setScienceError] = useState('');
   const [selected, setSelected] = useState(IDEAL);
   const [beta, setBeta] = useState(2.4);
   const [length, setLength] = useState(2.8);
@@ -78,14 +84,17 @@ export default function App() {
   const [saved, setSaved] = useState<Saved[]>(readNotebook);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<'experiment'|'notebook'|'missions'>('experiment');
+  const [tab, setTab] = useState<'experiment'|'notebook'|'missions'|'science'>('science');
   const [missionProgress, setMissionProgress] = useState<MissionProgress>(readMissionProgress);
   const [missionStorageWarning, setMissionStorageWarning] = useState('');
   const [sceneView, setSceneView] = useState<QuantumView>('configuration');
   const [sceneSeed, setSceneSeed] = useState(2026);
   const [showImages, setShowImages] = useState(false);
   const isIdeal = selected === IDEAL;
+  const isExtended = selected === OSC || selected === STRUCT;
   const currentPreset = presets.find(p => p.id === selected);
+  const scienceProfile = scienceData?.profiles[selected];
+  const openScienceExperiment = (presetId: string) => {setSelected(presetId); setTab('experiment');};
 
   useEffect(() => {
     jsonRequest<{presets: Preset[]}>('/api/v1/experiments')
@@ -93,6 +102,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    jsonRequest<ScienceMapData>('/api/v1/science-map')
+      .then(setScienceData).catch(e => setScienceError(String(e)));
+  }, []);
+
+  useEffect(() => {
+    if (isExtended) {setResult(null);setSweep(null);setBusy(false);return;}
     let cancelled = false;
     setBusy(true); setError(''); setResult(null); setSweep(null);
     const parameters = isIdeal ? {beta, cell_length: length} : {};
@@ -105,7 +120,20 @@ export default function App() {
     // A short delay coalesces changes while the user drags a range slider.
     const timeout = setTimeout(() => {void work().catch(e => {if (!cancelled) {setError(String(e)); setBusy(false);}});}, 180);
     return () => {cancelled = true; clearTimeout(timeout);};
-  }, [selected, beta, length, variable, isIdeal]);
+  }, [selected, beta, length, variable, isIdeal, isExtended]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMatchedIdeal(null);
+    if (result?.execution_mode !== 'recorded_result') return;
+    const beta = result.parameters.beta;
+    const cell_length = result.parameters.cell_length;
+    if (typeof beta !== 'number' || typeof cell_length !== 'number') return;
+    jsonRequest<Result>(`/api/v1/experiments/${IDEAL}/run`, {parameters: {beta, cell_length}})
+      .then(ideal => {if (!cancelled) setMatchedIdeal(ideal);})
+      .catch(() => {if (!cancelled) setMatchedIdeal(null);});
+    return () => {cancelled = true;};
+  }, [result]);
 
   const observable = result?.observables[0];
   const formatted = useMemo(() => observable ? observable.value.toFixed(5) : '—', [observable]);
@@ -114,42 +142,47 @@ export default function App() {
     try { localStorage.setItem(MISSION_PROGRESS_KEY, JSON.stringify(next)); setMissionStorageWarning(''); }
     catch { setMissionStorageWarning('Your progress is in this tab only. Export your expedition journal before closing.'); }
   };
-  const persist = () => {
-    if (!result) return;
-    const next = [{savedAt: new Date().toISOString(), result}, ...saved].slice(0, 20);
+  const persistResult = (entry: Result) => {
+    const next = [{savedAt: new Date().toISOString(), result: entry}, ...saved].slice(0, 20);
     try {localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); setSaved(next);}
     catch {setError('Browser storage is unavailable. Export the JSON result instead.');}
   };
 
+  const persist = () => {if (result) persistResult(result);};
   return <div className="layout">
     <aside className="sidebar">
       <div className="brand"><div className="brand-icon">◈</div><div><strong>QUANTUM<br/>MATTER</strong><span>EXPLORER</span></div></div>
       <div className="sidebar-label">WORKSPACE</div>
       <button className={`nav-link ${tab === 'experiment' ? 'active' : ''}`} onClick={() => setTab('experiment')}>⌁ <span>Quantum laboratory</span></button>
+      <button title="Science Map" aria-label="Science Map" className={`nav-link ${tab === 'science' ? 'active' : ''}`} onClick={() => setTab('science')}>◉ <span>Science Map</span></button>
       <button title="Research missions" aria-label="Research missions" className={`nav-link ${tab === 'missions' ? 'active' : ''}`} onClick={() => setTab('missions')}>✦ <span>Research missions <small>{totalXp(missionProgress)} XP</small></span></button>
       <button className={`nav-link ${tab === 'notebook' ? 'active' : ''}`} onClick={() => setTab('notebook')}>▤ <span>Research notebook <small>{saved.length}</small></span></button>
-      <div className="sidebar-bottom"><div className="dot"/> Local educational engine<br/><small>Patch 35 · Field School</small></div>
+      <div className="sidebar-bottom"><div className="dot"/> Local educational engine<br/><small>Patch 38 · Physics Labs</small></div>
     </aside>
     <main className="main">
-      <div className="topbar"><span>LABORATORY / {tab === 'experiment' ? 'EXPERIMENT 01' : tab === 'missions' ? 'RESEARCH MISSIONS' : 'NOTEBOOK'}</span><span className="top-status">● Engine v0.3 preview</span></div>
+      <div className="topbar"><span>LABORATORY / {tab === 'experiment' ? 'EXPERIMENT 01' : tab === 'missions' ? 'RESEARCH MISSIONS' : tab === 'science' ? 'SCIENCE MAP' : 'NOTEBOOK'}</span><span className="top-status">● Engine v0.3 preview</span></div>
       {tab === 'experiment' ? <>
         <header className="hero"><span className="eyebrow">INTERACTIVE QUANTUM PHYSICS</span><h1>Explore the invisible.</h1>
           <p>Choose a scientifically scoped experiment, change its parameters and discover what the quantum model predicts.</p>
           <button type="button" className="outline expedition-invite" onClick={() => setTab('missions')}>✦ Start the four-mission research expedition →</button></header>
+        {scienceError && <div className="error" role="alert">Science explanations unavailable: {scienceError}</div>}
+        <ScienceBrief profile={scienceProfile} onAtlas={() => setTab('science')}/>
+        {isExtended && <section className="panel expanded-switch"><label htmlFor="expanded-preset">Choose another physics laboratory</label> <select id="expanded-preset" value={selected} onChange={(e: {target:{value:string}})=>setSelected(e.target.value)}>{presets.map(p=><option key={p.id} value={p.id}>{p.title}</option>)}</select></section>}
+        {isExtended ? <ExpandedPhysicsLab presetId={selected} onResult={setExpandedResult} onSave={r=>persistResult(r as Result)} /> : <>
         <div className="content-grid">
           <section className="panel controls">
             <div className="panel-heading"><span className="eyebrow">01 / SETUP</span><h2>Your experiment</h2></div>
             <label htmlFor="preset">Physics scenario</label>
-            <select id="preset" value={selected} onChange={e => setSelected(e.target.value)}>
+            <select id="preset" value={selected} onChange={(e: {target:{value:string}}) => setSelected(e.target.value)}>
               {presets.length ? presets.map(p => <option key={p.id} value={p.id}>{p.title}</option>) : <option value={IDEAL}>Free bosons</option>}
             </select>
             <p className="hint">{currentPreset?.description || 'Canonical ideal Bose-gas control.'}</p>
             <span className={`mode-tag ${isIdeal ? 'analytic' : 'recorded'}`}>{isIdeal ? '✦ Calculated analytical control' : '▤ Historical recorded benchmark'}</span>
             {isIdeal ? <div className="sliders">
               <div className="control-row"><label htmlFor="beta">Inverse temperature <em>β</em></label><output>{beta.toFixed(2)}</output></div>
-              <input id="beta" aria-label="Inverse temperature" type="range" min="0.5" max="5" step="0.1" value={beta} onChange={e=>setBeta(Number(e.target.value))}/>
+              <input id="beta" aria-label="Inverse temperature" type="range" min="0.5" max="5" step="0.1" value={beta} onChange={(e: {target:{value:string}})=>setBeta(Number(e.target.value))}/>
               <div className="control-row"><label htmlFor="length">Cell length <em>L</em></label><output>{length.toFixed(2)}</output></div>
-              <input id="length" aria-label="Cell length" type="range" min="1.5" max="5" step="0.1" value={length} onChange={e=>setLength(Number(e.target.value))}/>
+              <input id="length" aria-label="Cell length" type="range" min="1.5" max="5" step="0.1" value={length} onChange={(e: {target:{value:string}})=>setLength(Number(e.target.value))}/>
               <p className="hint">The momentum mode is fixed at k = 0. Particle number is fixed at N = 1 → 2.</p>
             </div> : <div className="note">Parameters are intentionally fixed. This is a previously measured result, not a live Monte Carlo simulation.</div>}
             <div className="parameter-foot">SCIENTIFIC STATUS <strong>{currentPreset?.status?.replaceAll('_', ' ') || 'supported'}</strong></div>
@@ -165,7 +198,9 @@ export default function App() {
             <div className="result-actions"><button className="primary" disabled={!result} onClick={persist}>＋ Save to notebook</button><button className="outline" disabled={!result} onClick={()=>result&&saveFile(`${result.experiment_id}.json`,JSON.stringify(result,null,2))}>↓ Export JSON</button></div>
           </section>
         </div>
-        <section className="panel quantum-visualization">
+        </>}
+        <ScienceInspector data={scienceData} profile={scienceProfile} result={isExtended ? expandedResult : result} matchedIdeal={matchedIdeal} sweepVariable={variable}/>
+        {!isExtended && <><section className="panel quantum-visualization">
           <div className="visual-head"><div><span className="eyebrow">03 / VISUALIZE</span><h2>Inside the periodic cell</h2>
             <p>Rotate and zoom to examine a periodic model box. The 3D view is explanatory and does not change the Green-function calculation.</p></div>
             <span className="mode-tag">3D INTERACTIVE</span>
@@ -179,7 +214,7 @@ export default function App() {
           <div className="visual-actions">
             {sceneView === 'configuration' && <>
               <button type="button" className="outline" onClick={() => setSceneSeed(n => (n + 1) >>> 0)}>↻ New illustrative draw</button>
-              <label className="ghost-toggle"><input type="checkbox" checked={showImages} onChange={e=>setShowImages(e.target.checked)}/> Show neighboring periodic copies</label>
+              <label className="ghost-toggle"><input type="checkbox" checked={showImages} onChange={(e: {target:{checked:boolean}})=>setShowImages(e.target.checked)}/> Show neighboring periodic copies</label>
             </>}
             <span className="drag-tip">Drag to orbit · Scroll to zoom</span>
           </div>
@@ -196,8 +231,8 @@ export default function App() {
         <section className="panel interpretation"><span className="eyebrow">04 / UNDERSTAND</span><h2>What does this mean?</h2>
           <p>{isIdeal ? 'This observable measures a particle-addition correlation in imaginary time. The analytic ideal-gas formula is evaluated numerically for the thermal partition function. It does not show particles moving in real time.' : 'This is a fixed recorded measurement of interacting bosons at M=8. Its uncertainty comes from independent Monte Carlo replicas. The result passed screening but has not been certified as a continuum-limit value.'}</p>
           {result && <details><summary>Scientific provenance and limitations</summary><ul>{result.cautions.map((c,i)=><li key={i}>{c}</li>)}</ul><p>Fingerprint: <code>{result.fingerprint_sha256}</code></p></details>}
-        </section>
-      </> : tab === 'missions' ? <MissionBoard progress={missionProgress} onProgress={updateMissionProgress} storageWarning={missionStorageWarning}/> : <><header className="hero"><span className="eyebrow">YOUR INVESTIGATIONS</span><h1>Research notebook.</h1><p>Saved results are stored in this browser only. Export JSON files to retain them outside this device.</p></header>
+        </section></>}
+      </> : tab === 'science' ? <><ScienceMapPage data={scienceData} onOpenExperiment={openScienceExperiment}/>{scienceError && <div className="error" role="alert">{scienceError}</div>}</> : tab === 'missions' ? <MissionBoard progress={missionProgress} onProgress={updateMissionProgress} storageWarning={missionStorageWarning}/> : <><header className="hero"><span className="eyebrow">YOUR INVESTIGATIONS</span><h1>Research notebook.</h1><p>Saved results are stored in this browser only. Export JSON files to retain them outside this device.</p></header>
         <section className="panel notebook"><div className="panel-heading"><h2>Saved experiments ({saved.length})</h2></div>
           {saved.length===0 ? <p>No experiments saved yet. Visit the laboratory to create your first entry.</p> : saved.map((item,i)=><div className="saved-item" key={`${item.savedAt}-${i}`}><div><strong>{item.result.experiment_id}</strong><small>{new Date(item.savedAt).toLocaleString()} · {item.result.execution_mode.replaceAll('_',' ')}</small></div><div><strong>{item.result.observables[0].value.toFixed(5)}</strong><button onClick={()=>saveFile(`experiment-${i+1}.json`,JSON.stringify(item.result,null,2))}>Export</button></div></div>)}
           {saved.length>0&&<button className="outline" onClick={()=>{if(confirm('Clear all browser-only notebook entries?')){localStorage.removeItem(STORAGE_KEY);setSaved([]);}}}>Clear notebook</button>}

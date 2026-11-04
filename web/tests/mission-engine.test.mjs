@@ -13,13 +13,14 @@ const tmp=mkdtempSync(join(tmpdir(),'qme-mission-test-'));
 const tsc=process.platform==='win32'?'tsc.cmd':'tsc';
 try {
   execFileSync(tsc,["--strict","--target","ES2021","--module","commonjs","--skipLibCheck",
-    "--outDir",tmp,"src/missionEngine.ts"],{cwd:webRoot,stdio:'pipe'});
+    "--outDir",tmp,"src/missionEngine.ts","src/missionExperience.ts"],{cwd:webRoot,stdio:'pipe'});
 } catch(e) {
   rmSync(tmp,{recursive:true,force:true});
   throw new Error(`Mission engine TypeScript compilation failed: ${e.stderr?.toString() || e.message}`);
 }
 const require=createRequire(import.meta.url);
 const engine=require(join(tmp,'missionEngine.js'));
+const experience=require(join(tmp,'missionExperience.js'));
 process.on('exit',()=>rmSync(tmp,{recursive:true,force:true}));
 const {MISSIONS,EMPTY_PROGRESS,assessEvidence,recordCompletion,totalXp,isUnlocked,earnedBadges,validatedProgress}=engine;
 
@@ -107,4 +108,36 @@ test('bounded storage recovery, stable achievements and graduated unlocks',()=>{
   const two=recordCompletion(p1,m2,'higher','levels',f2,'');
   assert.equal(totalXp(two),80);
   assert.equal(isUnlocked(two,MISSIONS[2]),true);
+});
+
+
+test('mission guidance transitions never reveal an outcome before evidence',()=>{
+  const {missionStage,learningSteps}=experience;
+  const mission=m('thermal-detective');
+  assert.equal(missionStage(null,null,false),'predict');
+  assert.equal(missionStage('higher',null,false),'collect');
+  const evidence=assessEvidence(mission,[synthetic(mission.evidence[0],1.2),synthetic(mission.evidence[1],1.9)]);
+  assert.equal(missionStage('lower',evidence,false),'interpret');
+  assert.equal(missionStage('lower',evidence,true),'review');
+  assert.deepEqual(learningSteps('interpret').map(s=>s.id),['predict','collect','interpret','review']);
+});
+
+test('plain-language outcome derives from observed values, never predicted answer',()=>{
+  const {observedOutcome}=experience;
+  const mission=m('thermal-detective');
+  const up=assessEvidence(mission,[synthetic(mission.evidence[0],1.0),synthetic(mission.evidence[1],1.7)]);
+  const down=assessEvidence(mission,[synthetic(mission.evidence[0],2.0),synthetic(mission.evidence[1],1.3)]);
+  assert.match(observedOutcome(mission,up),/higher than/);
+  assert.match(observedOutcome(mission,down),/lower than/);
+  const referenceMission=m('uncertainty-investigator');
+  assert.match(observedOutcome(referenceMission,assessEvidence(referenceMission,[synthetic(referenceMission.evidence[0],1.685)])),/passes this two-SEM screening/);
+  assert.match(observedOutcome(referenceMission,assessEvidence(referenceMission,[synthetic(referenceMission.evidence[0],2.1)])),/fails this two-SEM screening/);
+  assert.match(observedOutcome(referenceMission,assessEvidence(referenceMission,[synthetic(referenceMission.evidence[0],1.685)])),/not.*proves|Neither outcome proves/);
+});
+
+test('glossary distinguishes imaginary time, history and uncertainty',()=>{
+  const terms=experience.RESEARCH_GLOSSARY;
+  assert(terms.length>=5);
+  assert(terms.some(item=>/Green function/.test(item.term) && /not a real-time/.test(item.definition)));
+  assert(terms.some(item=>/Recorded benchmark/.test(item.term) && /not running/.test(item.definition)));
 });

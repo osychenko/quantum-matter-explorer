@@ -40,3 +40,35 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,.mission-option:
 @media(max-width:1100px) {.mission-layout {grid-template-columns:1fr}.mission-steps {grid-template-columns:repeat(2,minmax(0,1fr))}.mission-map {order:0}.mission-active {order:1}}
 @media(max-width:650px) {.mission-dashboard {display:block}.mission-dashboard-meter {width:100%;margin-top:23px}.mission-steps {grid-template-columns:1fr}.mission-active {padding:18px}.mission-measurement-header {display:block}.mission-origin {display:block;margin-top:7px}.mission-dashboard-lead h2 {font-size:23px}}
 @media(prefers-reduced-motion:reduce) {.mission-meter div,.mission-option {transition:none}}
+/* Patch 36: onboarding, explicit study stages, and accessible review. */
+.mission-guide{margin-bottom:20px;border-color:#365968}
+.mission-guide-head{display:flex;justify-content:space-between;align-items:center;gap:18px}
+.mission-guide-head h2{font-size:19px;margin:7px 0 0}
+.mission-guide-body{color:#c5d6e1;font-size:13px;line-height:1.8;max-width:1000px}
+.mission-guide-body p{margin:15px 0}
+.mission-guide-body strong{color:#e0f6ed}
+.mission-text-button{color:#8bead9;background:transparent;border:0;text-decoration:underline;cursor:pointer;padding:10px 0;font:inherit}
+.mission-glossary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:10px 0}
+.mission-glossary>div{padding:12px;background:#101f30;border:1px solid #36516a;border-radius:9px}
+.mission-glossary dt{color:#d7f7ee;font-weight:bold}
+.mission-glossary dd{margin:5px 0 0;color:#aac3d2;line-height:1.65}
+.mission-process ol{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;list-style:none;margin:19px 0 0;padding:0}
+.mission-process li{min-width:0;display:flex;align-items:center;gap:6px;font-size:11px;color:#90a9ba}
+.mission-process li span{display:grid;place-items:center;flex-shrink:0;width:24px;height:24px;border:1px solid #3a596e;border-radius:50%}
+.mission-process li.current{color:#dffef0}.mission-process li.current span{background:#28766c;border-color:#7be2cb}
+.mission-process li.done{color:#a6e0c9}.mission-process li.done span{border-color:#6abfa8}
+.mission-stage-help{color:#b6cdcf;font-size:12px;line-height:1.5;margin:12px 0 20px}
+.mission-observation-explanation{border-left:3px solid #6ed7bf;background:#19313d;color:#dcf5ee;padding:13px;font-size:13px;line-height:1.75}
+.mission-error{border:1px solid #cc9277;border-radius:9px;background:#322c30;color:#ffe5d4;padding:15px;margin-top:20px;font-size:13px;line-height:1.7}
+.mission-error p{margin:5px 0}
+.mission-next-question{background:#132b35;padding:12px;border-radius:8px}
+#mission-title:focus{outline:none}
+@media(max-width:650px){.mission-glossary{grid-template-columns:1fr}.mission-process li{flex-direction:column;text-align:center}.mission-process li strong{font-size:10px}.mission-guide-head{align-items:flex-start}}
+@media(prefers-reduced-motion:reduce){.mission-process *, .mission-guide *{transition:none!important;animation:none!important}}
+.mission-playtest{margin-top:20px}
+.mission-playtest h2{margin:10px 0;font-size:20px}
+.mission-playtest>p{font-size:13px;line-height:1.7;color:#bdd1dc}
+.mission-playtest-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin:18px 0}
+.mission-playtest-fields label{color:#d6e7ef;font-size:12px;line-height:1.5}
+.mission-playtest-fields textarea{display:block;margin-top:7px;width:100%;padding:10px;border:1px solid #476072;border-radius:8px;background:#0e2131;color:#f0fafb;resize:vertical;min-height:70px}
+@media(max-width:800px){.mission-playtest-fields{grid-template-columns:1fr}}
