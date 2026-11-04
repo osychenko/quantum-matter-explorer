@@ -1,3 +1,7 @@
+![1793631089369](image/README/1793631089369.png)
+
+![1793486061733](image/README/1793486061733.png)
+
 # Quantum Matter Explorer
 
 An experimental, NumPy-based quantum Monte Carlo (QMC) engine intended to
@@ -54,20 +58,20 @@ an independent analytic reference with an exact Gaussian trial.
 
 ## Layout
 
-| Path | Purpose |
-| --- | --- |
-| `qmc/vmc.py` | VMC sampling, scans, and current CSV writers |
-| `qmc/dmc.py` | DMC driver and fixed-imaginary-time timestep scans |
-| `qmc/propagators.py` | DMC drift-diffusion moves |
-| `qmc/evaluation.py` | Potential, local energy, and trial evaluation |
-| `qmc/trials.py` | Single-particle trial wavefunctions |
-| `qmc/potentials.py` | Single-particle test potentials |
-| `qmc/resampling.py` | Fixed-population systematic resampling |
-| `qmc/stats.py` | Block statistics |
-| `qmc/plotting.py` | PNG plots without a GUI |
-| `qmc/cells.py` | 3D periodic geometry, minimum-image distances, reciprocal vectors |
-| `examples/yukawa/run_yukawa.py` | End-to-end Yukawa experiment |
-| `tests/` | Fast scientific and data-format regression tests |
+| Path                              | Purpose                                                           |
+| --------------------------------- | ----------------------------------------------------------------- |
+| `qmc/vmc.py`                    | VMC sampling, scans, and current CSV writers                      |
+| `qmc/dmc.py`                    | DMC driver and fixed-imaginary-time timestep scans                |
+| `qmc/propagators.py`            | DMC drift-diffusion moves                                         |
+| `qmc/evaluation.py`             | Potential, local energy, and trial evaluation                     |
+| `qmc/trials.py`                 | Single-particle trial wavefunctions                               |
+| `qmc/potentials.py`             | Single-particle test potentials                                   |
+| `qmc/resampling.py`             | Fixed-population systematic resampling                            |
+| `qmc/stats.py`                  | Block statistics                                                  |
+| `qmc/plotting.py`               | PNG plots without a GUI                                           |
+| `qmc/cells.py`                  | 3D periodic geometry, minimum-image distances, reciprocal vectors |
+| `examples/yukawa/run_yukawa.py` | End-to-end Yukawa experiment                                      |
+| `tests/`                        | Fast scientific and data-format regression tests                  |
 
 ## Configuration shapes and kinetic coefficient (v0.2)
 
