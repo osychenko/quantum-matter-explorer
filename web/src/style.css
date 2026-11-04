@@ -73,3 +73,35 @@ button:focus-visible,summary:focus-visible,.science-depth button:focus-visible{o
 .physics-plot figcaption{font-size:.82rem;color:#a4bbcb;margin-top:12px;line-height:1.55}.physics-plot h3{font-size:1rem}
 .key-gaussian{color:#6eefe1}.key-exact{color:#d4b177}.key-vmc{color:#ff9b8f}
 @media(prefers-reduced-motion:reduce){.physics-plot svg *{transition:none!important;animation:none!important}}
+
+/* Patch 39 — Comparison Laboratory: evidence before decoration. */
+.comparison-laboratory {max-width:1200px;margin:auto;padding-bottom:3rem}
+.comparison-laboratory .hero {margin-bottom:1.5rem}
+.comparison-slider {margin-top:1.3rem}
+.comparison-slider input[type=range] {width:100%}
+.comparison-plot {margin:.6rem 0 1rem;min-width:0}
+.comparison-plot svg {display:block;width:100%;max-width:700px;height:auto}
+.comparison-plot figcaption {font-size:.84rem;color:#afc3d2;line-height:1.55;margin:.3rem 0 .7rem}
+.comparison-delta {border:1px solid #466378;border-radius:12px;padding:1rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.comparison-delta small {color:#c1d4df}.comparison-delta strong {font-size:1.5rem;font-variant-numeric:tabular-nums}
+.comparison-logic-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}
+.comparison-logic-grid article,.comparison-arm {background:#101f2e;border:1px solid #31465c;border-radius:12px;padding:1.1rem;min-width:0}
+.comparison-logic-grid h3,.comparison-arm h3 {font-size:1.08rem;margin:.2rem 0 .7rem}
+.comparison-logic-grid ul {margin:.4rem 0 0;padding-left:1.3rem;color:#c5d5e2;line-height:1.65}
+.comparison-logic-grid li {margin-bottom:.5rem}
+.comparison-laboratory > .panel {margin-top:1.35rem}
+.comparison-arm-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
+.comparison-arm-head {display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;justify-content:space-between}
+.comparison-number {font-size:clamp(1.65rem,4vw,2.2rem);font-weight:750;margin:.8rem 0 .2rem;font-variant-numeric:tabular-nums;color:#e2f9f5}
+.comparison-references {margin:1rem 0;background:#15293c;padding:.8rem;border-radius:8px}
+.comparison-references div {display:flex;justify-content:space-between;gap:1rem;padding:.2rem 0;font-size:.85rem}
+.comparison-parameters {margin:.8rem 0;display:grid;gap:.45rem}
+.comparison-parameters>div {display:flex;justify-content:space-between;gap:1rem;border-bottom:1px solid #2e4458;padding:.3rem 0}
+.comparison-parameters dt {color:#aec2d2;word-break:break-word}
+.comparison-parameters dd {margin:0;text-align:right;word-break:break-all;max-width:58%}
+.comparison-arm summary {cursor:pointer;margin:1rem 0;color:#a6efe8}
+.comparison-curve-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
+.comparison-color-a {color:#76f2e2}.comparison-color-b {color:#ffc78a}
+.comparison-interpretation .comparison-logic-grid {grid-template-columns:repeat(2,minmax(0,1fr))}
+.comparison-interpretation code,.comparison-arm code {overflow-wrap:anywhere}
+@media(max-width:900px) {.comparison-logic-grid {grid-template-columns:1fr}.comparison-arm-grid,.comparison-curve-grid,.comparison-interpretation .comparison-logic-grid {grid-template-columns:1fr}}

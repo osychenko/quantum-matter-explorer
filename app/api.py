@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from qmc.educational_science import science_map
+from qmc.educational_comparisons import comparison_catalog, comparison_requires_live, run_comparison
 from qmc.educational_contract import (
     SCHEMA_VERSION, ENGINE_RELEASE, catalog, run_experiment, validate_result,
 )
@@ -27,6 +28,11 @@ app = FastAPI(
 
 
 class RunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class CompareRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     parameters: dict[str, Any] = Field(default_factory=dict)
 
@@ -73,6 +79,28 @@ def run(preset_id: str, request: RunRequest):
             result = run_experiment(preset_id, request.parameters)
             validate_result(result)
             return result
+        except ValueError as exc:
+            raise _bad_input(exc) from exc
+    finally:
+        if live:
+            _LIVE_VMC_SLOT.release()
+
+
+@app.get("/api/v1/comparisons")
+def comparisons():
+    """Allowed comparisons. The server, not the client, chooses both models."""
+    return {"comparison_schema_version": "1.0.0", "comparisons": comparison_catalog()}
+
+
+@app.post("/api/v1/comparisons/{comparison_id}/run")
+def compare(comparison_id: str, request: CompareRequest):
+    """Bounded curated two-arm study; a live comparison reserves one VMC slot."""
+    live = comparison_requires_live(comparison_id)
+    if live and not _LIVE_VMC_SLOT.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail='The local VMC laboratory is busy; retry when it finishes')
+    try:
+        try:
+            return run_comparison(comparison_id, request.parameters)
         except ValueError as exc:
             raise _bad_input(exc) from exc
     finally:

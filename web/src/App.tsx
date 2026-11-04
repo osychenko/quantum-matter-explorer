@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import QuantumCell3D, {type QuantumView} from './QuantumCell3D';
 import MissionBoard from './MissionBoard';
 import ExpandedPhysicsLab, {OSC,STRUCT,type LiveResult} from './ExpandedPhysicsLab';
+import ComparisonLab from './ComparisonLab';
 import ScienceMapPage, {ScienceBrief, ScienceInspector, type ScienceMapData} from './ScienceMap';
 import {MISSION_PROGRESS_KEY, validatedProgress, totalXp, type MissionProgress} from './missionEngine';
 import './missions.css';
@@ -84,7 +85,7 @@ export default function App() {
   const [saved, setSaved] = useState<Saved[]>(readNotebook);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<'experiment'|'notebook'|'missions'|'science'>('science');
+  const [tab, setTab] = useState<'experiment'|'notebook'|'missions'|'science'|'comparisons'>('science');
   const [missionProgress, setMissionProgress] = useState<MissionProgress>(readMissionProgress);
   const [missionStorageWarning, setMissionStorageWarning] = useState('');
   const [sceneView, setSceneView] = useState<QuantumView>('configuration');
@@ -155,12 +156,14 @@ export default function App() {
       <div className="sidebar-label">WORKSPACE</div>
       <button className={`nav-link ${tab === 'experiment' ? 'active' : ''}`} onClick={() => setTab('experiment')}>⌁ <span>Quantum laboratory</span></button>
       <button title="Science Map" aria-label="Science Map" className={`nav-link ${tab === 'science' ? 'active' : ''}`} onClick={() => setTab('science')}>◉ <span>Science Map</span></button>
+      <button title="Comparison Laboratory" aria-label="Comparison Laboratory" className={`nav-link ${tab === 'comparisons' ? 'active' : ''}`} onClick={() => setTab('comparisons')}>⇄ <span>Comparison laboratory</span></button>
       <button title="Research missions" aria-label="Research missions" className={`nav-link ${tab === 'missions' ? 'active' : ''}`} onClick={() => setTab('missions')}>✦ <span>Research missions <small>{totalXp(missionProgress)} XP</small></span></button>
       <button className={`nav-link ${tab === 'notebook' ? 'active' : ''}`} onClick={() => setTab('notebook')}>▤ <span>Research notebook <small>{saved.length}</small></span></button>
-      <div className="sidebar-bottom"><div className="dot"/> Local educational engine<br/><small>Patch 38 · Physics Labs</small></div>
+      <div className="sidebar-bottom"><div className="dot"/> Local educational engine<br/><small>Patch 39 · Compare & Understand</small></div>
     </aside>
     <main className="main">
-      <div className="topbar"><span>LABORATORY / {tab === 'experiment' ? 'EXPERIMENT 01' : tab === 'missions' ? 'RESEARCH MISSIONS' : tab === 'science' ? 'SCIENCE MAP' : 'NOTEBOOK'}</span><span className="top-status">● Engine v0.3 preview</span></div>
+      <div className="topbar"><span>LABORATORY / {tab === 'experiment' ? 'EXPERIMENT 01' : tab === 'missions' ? 'RESEARCH MISSIONS' : tab === 'science' ? 'SCIENCE MAP' : tab === 'comparisons' ? 'COMPARISON LABORATORY' : 'NOTEBOOK'}</span><span className="top-status">● Engine v0.3 preview</span></div>
+      {tab === 'comparisons' && <ComparisonLab/>}
       {tab === 'experiment' ? <>
         <header className="hero"><span className="eyebrow">INTERACTIVE QUANTUM PHYSICS</span><h1>Explore the invisible.</h1>
           <p>Choose a scientifically scoped experiment, change its parameters and discover what the quantum model predicts.</p>
