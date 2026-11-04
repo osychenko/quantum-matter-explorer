@@ -1,6 +1,3 @@
-![1793631089369](image/README/1793631089369.png)
-
-![1793486061733](image/README/1793486061733.png)
 
 # Quantum Matter Explorer
 

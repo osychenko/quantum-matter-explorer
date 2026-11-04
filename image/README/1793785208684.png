@@ -1,0 +1,352 @@
+diff --git a/docs/educational_playtesting_patch36.md b/docs/educational_playtesting_patch36.md
+new file mode 100644
+index 0000000..3163e5f
+--- /dev/null
++++ b/docs/educational_playtesting_patch36.md
+@@ -0,0 +1,68 @@
++# Patch 36 — Onboarding, learning feedback and MVP playtesting
++
++Patch 36 is a *product usability* release. The curated physics API, numerical
++samplers, mission evidence validator, completion scoring and browser-only
++storage contract are unchanged.
++
++## Experience changes
++
++- Mission field guide explains prediction, numerical evidence, interpretation,
++  and reflection. The glossary defines beta, Green function, periodic cell,
++  recorded benchmark, replica SEM and finite-basis spectral reference.
++- A four-stage indicator guides each chapter. The scientific result remains
++  concealed until a prediction is submitted. Feedback is derived **only** from
++  the checked API observations and never from the user's guess.
++- Evidence-collection network failures preserve the prediction and offer a
++  concrete recovery hint. Chapter changes focus the chapter heading, and
++  scroll without animation when reduced motion is requested.
++- Progressbar semantics, explicit screen-reader feedback, keyboard focus styles
++  and mobile layout are preserved or improved.
++- Optional in-browser playtest questionnaire exports a JSON file; answers are
++  not transmitted or persisted by the application. Do not enter identifying
++  information. The existing expedition journal is still stored only in the
++  browser and exported separately.
++
++## Run
++
++```bash
++# Terminal 1, from repository root
++python3 -m uvicorn app.api:app --host 127.0.0.1 --port 8000
++# Terminal 2
++cd web
++npm install
++npm run test:missions
++npm run build
++npm run dev
++```
++
++Open http://127.0.0.1:5173 and select **Research missions**. In remote
++VS Code SSH, forward the Vite and FastAPI ports.
++
++## Guided playtest protocol (15–20 minutes)
++
++Recruit 3–5 volunteers with different physics backgrounds, ideally including
++at least two beginners. Ask each to complete the first two missions without
++verbal guidance, then try the recorded-benchmark and uncertainty missions.
++Observe whether they can:
++
++1. Identify what changes when beta grows (temperature goes down).
++2. Predict before revealing the analytical control.
++3. Explain why a 3D imaginary-time visualization is not real-time motion.
++4. Tell recorded Monte Carlo data from a live calculation.
++5. Explain what the ± uncertainty means without calling it proof.
++6. Find the next chapter, retry a failed network request, and export notes.
++
++Record completion/blockers and qualitative comments. Do **not** interpret
++self-reported learning as measured learning gain; an independent pre/post
++assessment would be necessary. No automated analytics or third-party tracking
++is added. Test with keyboard only, a narrow viewport, reduced motion and
++an intentionally stopped backend. For the public release consider a proper
++screen-reader audit and browser compatibility tests.
++
++## Scope and non-goals
++
++The recorded interacting M=8 result remains a candidate historical benchmark,
++not a newly computed Monte Carlo run or proof of continuum convergence.
++M=12 exchange remains research-only. A prettier interface does not certify the
++scientific engine. Patch 36 intentionally does not add live QMC jobs,
++accounts, centralized telemetry, score-based physics judgments or new samplers.
+diff --git a/web/src/MissionBoard.tsx b/web/src/MissionBoard.tsx
+index 0c49fdc..1219357 100644
+--- a/web/src/MissionBoard.tsx
++++ b/web/src/MissionBoard.tsx
+@@ -5,6 +5,7 @@ import {
+   recordCompletion, totalXp, type EngineObservation, type Finding,
+   type Mission, type MissionId, type MissionProgress, type Prediction,
+ } from './missionEngine';
++import {learningSteps, missionStage, observedOutcome, RESEARCH_GLOSSARY} from './missionExperience';
+ 
+ type Props = {progress:MissionProgress; onProgress:(next:MissionProgress)=>void; storageWarning:string};
+ 
+@@ -63,11 +64,17 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
+   const [newlyCompleted,setNewlyCompleted]=useState(false);
+   const [loading,setLoading]=useState(false);
+   const [error,setError]=useState('');
++  const [showGuide,setShowGuide]=useState(true);
++  const [showGlossary,setShowGlossary]=useState(false);
++  const [playtest,setPlaytest]=useState({confusing:'',learned:'',next:''});
+   const controller=useRef<AbortController|null>(null);
+   const mission=MISSIONS.find(m=>m.id===active)!;
+   const completion=progress.completions.find(c=>c.missionId===active);
+   const badges=earnedBadges(progress);
+   const xp=totalXp(progress);
++  const stage=missionStage(prediction,finding,feedback);
++  const steps=learningSteps(stage);
++  const stageIndex=steps.findIndex(s=>s.id===stage);
+ 
+   useEffect(()=>()=>controller.current?.abort(),[active]);
+   const selectMission=(id:MissionId)=>{
+@@ -76,7 +83,12 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
+     controller.current?.abort();
+     setActive(id);setPrediction(null);setFinding(null);setInterpretation('');
+     setResearchNote('');setFeedback(false);setNewlyCompleted(false);setLoading(false);setError('');
+-    window.requestAnimationFrame(()=>document.getElementById('mission-chapter')?.scrollIntoView({block:'start',behavior:'smooth'}));
++    window.requestAnimationFrame(()=>{
++      const heading=document.getElementById('mission-title');
++      heading?.focus({preventScroll:true});
++      document.getElementById('mission-chapter')?.scrollIntoView({block:'start',
++        behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
++    });
+   };
+   const reveal=async()=>{
+     if (!prediction || loading || finding) return;
+@@ -111,10 +123,18 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
+       <div className="mission-dashboard-lead"><span className="eyebrow">RESEARCH RANK</span><h2>{xp===160?'Quantum Explorer':xp>=80?'Field Researcher':xp>0?'Junior Investigator':'New Researcher'}</h2>
+         <p>{progress.completions.length} of {MISSIONS.length} investigations completed · {xp} research XP</p></div>
+       <div className="mission-dashboard-meter"><div className="mission-meter-line"><span>Expedition progress</span><strong>{Math.round(100*progress.completions.length/MISSIONS.length)}%</strong></div>
+-        <div className="mission-meter"><div style={{width:`${100*progress.completions.length/MISSIONS.length}%`}}/></div>
++        <div className="mission-meter" role="progressbar" aria-label="Expedition completion" aria-valuemin={0} aria-valuemax={MISSIONS.length} aria-valuenow={progress.completions.length}><div style={{width:`${100*progress.completions.length/MISSIONS.length}%`}}/></div>
+         <span className="mission-mini-note">{XP_PER_MISSION} XP per completed investigation · No extra points for a “correct” guess</span>
+       </div>
+     </div>
++    <div className="mission-guide panel" aria-label="How to play">
++      <div className="mission-guide-head"><div><span className="eyebrow">FIRST TIME HERE?</span><h2>Your research field guide</h2></div>
++        <button type="button" className="outline" aria-expanded={showGuide} onClick={()=>setShowGuide(v=>!v)}>{showGuide?'Hide guide':'Show guide'}</button></div>
++      {showGuide&&<div className="mission-guide-body"><p><strong>No physics background required.</strong> Start by choosing a prediction. Reveal evidence from a real analytical control or a labeled historical recording. Then select the explanation that fits the evidence and optionally write a note. Wrong predictions are welcome: the objective is scientific reasoning.</p>
++        <p><strong>Helpful distinction:</strong> A 3D scene illustrates the model; its moving graphics are not real-time quantum trajectories. A recorded Monte Carlo benchmark does not update when you change the analytical sliders.</p>
++        <button type="button" className="mission-text-button" aria-expanded={showGlossary} onClick={()=>setShowGlossary(v=>!v)}>{showGlossary?'Hide terminology':'Explain the physics terms'} </button>
++        {showGlossary&&<dl className="mission-glossary">{RESEARCH_GLOSSARY.map(g=><div key={g.term}><dt>{g.term}</dt><dd>{g.definition}</dd></div>)}</dl>}</div>}
++    </div>
+     <div className="mission-layout">
+       <section className="panel mission-map">
+         <span className="eyebrow">YOUR EXPEDITION MAP</span><h2>Four discoveries</h2>
+@@ -139,9 +159,12 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
+         <p className="mission-mini-note">Progress lives only in this browser. Export it to keep a copy; this preview does not support importing a journal.</p>
+         {storageWarning&&<p className="mission-caution" role="status">{storageWarning}</p>}
+       </section>
+-      <section id="mission-chapter" className="panel mission-active" key={mission.id}>
++      <section id="mission-chapter" className="panel mission-active" key={mission.id} aria-labelledby="mission-title">
+         <div className="mission-active-top"><span className="eyebrow">CHAPTER {String(mission.chapter).padStart(2,'0')} / {MISSIONS.length}</span><span className="mission-xp">+{XP_PER_MISSION} XP</span></div>
+-        <h2>{mission.title}</h2><p className="mission-story">{mission.story}</p>
++        <h2 id="mission-title" tabIndex={-1}>{mission.title}</h2>
++        <nav className="mission-process" aria-label="Mission stages"><ol>{steps.map((item,i)=><li key={item.id} className={i<stageIndex?'done':i===stageIndex?'current':'upcoming'} aria-current={i===stageIndex?'step':undefined}><span>{i<stageIndex?'✓':i+1}</span><strong>{item.title}</strong></li>)}</ol></nav>
++        <p className="mission-stage-help" role="status">{steps[stageIndex].detail}.</p>
++        <p className="mission-story">{mission.story}</p>
+         {completion&&<div className="mission-complete-note">✓ Expedition completed on {new Date(completion.completedAt).toLocaleDateString()}. You may replay this investigation; XP is awarded once.</div>}
+         <div className="mission-question"><span className="mission-section-label">01 / PREDICT FIRST</span><h3>{mission.hypothesis}</h3>
+           <fieldset disabled={!!finding||loading} className="mission-radio-set"><legend className="sr-only">Choose your prediction</legend>
+@@ -153,9 +176,10 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
+             onClick={()=>void reveal()}>{loading?'Collecting evidence…':mission.evidence.some(e=>e.mode==='recorded_result')?'Reveal curated evidence':'Run analytical controls'}</button>
+           {!finding&&<p className="mission-mini-note">Choose before revealing the results. Both correct and incorrect hypotheses are valuable.</p>}
+         </div>
+-        {error&&<p role="alert" className="error">{error}</p>}
++        {error&&<div role="alert" className="mission-error"><strong>Evidence could not be collected.</strong><p>{error}</p><p>Your prediction is preserved. Check that the local API server is running, then try collecting evidence again.</p></div>}
+         {finding&&<>
+           <EvidencePanel finding={finding} mission={mission}/>
++          <p className="mission-observation-explanation"><strong>In plain language:</strong> {observedOutcome(mission,finding)}</p>
+           <div className="mission-question"><span className="mission-section-label">03 / INTERPRET</span><h3>{mission.interpretQuestion}</h3>
+             <fieldset className="mission-radio-set" disabled={feedback}><legend className="sr-only">Choose an interpretation</legend>
+               {mission.interpretations.map(choice=><label key={choice.id} className={`mission-option ${interpretation===choice.id?'chosen':''}`}>
+@@ -164,7 +188,8 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
+             </fieldset>
+             <label htmlFor={`mission-note-${mission.id}`} className="mission-note-label">Research notebook note <span>(optional, maximum 400 characters)</span></label>
+             <textarea id={`mission-note-${mission.id}`} rows={3} maxLength={400} disabled={feedback}
+-              placeholder="What surprised you? What would you test next?" value={researchNote} onChange={e=>setResearchNote(e.target.value)}/>
++              placeholder="What surprised you? What would you test next?" value={researchNote} onChange={(e:{target:{value:string}})=>setResearchNote(e.target.value)}/>
++            <span className="mission-mini-note" aria-live="off">{researchNote.length}/400 characters · You can leave this blank.</span>
+             <button type="button" className="primary mission-action" disabled={!interpretation||feedback} onClick={complete}>
+               Record discovery {completion?'(replay)':''}
+             </button>
+@@ -174,11 +199,33 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
+           <span className="eyebrow">DISCOVERY RECORDED</span><h3>{matched?'Your hypothesis matched the observation.':'Your hypothesis was challenged—that is how science progresses.'}</h3>
+           <p>{answeredCorrectly?'Your interpretation matches the evidence.':'There is a stronger explanation to consider:'}</p>
+           <p>{mission.lesson}</p><p className="mission-caution">{mission.caution}</p>
++          <p className="mission-next-question"><strong>Think like a scientist:</strong> What additional evidence or control would make this conclusion stronger? Your optional field note can describe a next experiment.</p>
+           <div className="mission-reveal-actions"><strong>{newlyCompleted?`+${XP_PER_MISSION} research XP`:'XP was earned on your first completion'}</strong>
+             {MISSIONS[mission.chapter]&&<button className="outline" type="button" onClick={()=>selectMission(MISSIONS[mission.chapter].id)}>Next mission →</button>}</div>
+         </div>}
+       </section>
+     </div>
++    <section className="panel mission-playtest" aria-labelledby="mission-playtest-title">
++      <span className="eyebrow">FIELD TEST / OPTIONAL</span><h2 id="mission-playtest-title">Help shape the next expedition</h2>
++      <p>What was confusing, what did you learn, and what would you explore next? No account and no automatic submission: your answers stay in this tab unless you export them and choose to share the file.</p>
++      <div className="mission-playtest-fields">
++        {([
++          ['confusing','What was confusing or difficult?'],
++          ['learned','What new idea did you learn?'],
++          ['next','What would you like to investigate next?'],
++        ] as const).map(([key,label])=><label key={key}>{label}
++          <textarea rows={2} maxLength={500} value={playtest[key]}
++            onChange={(e:{target:{value:string}})=>setPlaytest(prev=>({...prev,[key]:e.target.value}))}/>
++        </label>)}
++      </div>
++      <button type="button" className="outline" disabled={!Object.values(playtest).some(value=>value.trim())}
++        onClick={()=>exportJson('qme-playtest-feedback.json',{
++          schema_version:'1',kind:'optional_local_playtest',
++          completed_missions:progress.completions.length,answers:playtest,
++          privacy_note:'No identifying information requested; file saved locally, not submitted',
++        })}>↓ Export my feedback</button>
++      <p className="mission-mini-note">Please do not enter names, email addresses or other personal details. Only share exported feedback if you choose to.</p>
++    </section>
+     <section className="panel mission-principles"><span className="eyebrow">THE RESEARCHER'S CODE</span><h2>Progress means better questions, not perfect guesses.</h2>
+       <p>Each mission uses a curated analytical result or an explicitly identified historical numerical benchmark. No task asserts a phase transition, mistakes imaginary-time paths for real motion, or presents a recorded QMC result as a live simulation. Achievements are educational milestones, not certifications of physical accuracy.</p>
+     </section>
+diff --git a/web/src/missionExperience.ts b/web/src/missionExperience.ts
+new file mode 100644
+index 0000000..bc48611
+--- /dev/null
++++ b/web/src/missionExperience.ts
+@@ -0,0 +1,41 @@
++/** Patch 36: presentation-only guidance derived from verified mission evidence.
++ * Do not infer physical claims or trust user-supplied text as simulation output.
++ */
++import type {Finding, Mission, Prediction} from './missionEngine';
++
++export type MissionStage = 'predict' | 'collect' | 'interpret' | 'review';
++export function missionStage(prediction:Prediction|null, finding:Finding|null, feedback:boolean):MissionStage {
++  if (feedback) return 'review';
++  if (finding) return 'interpret';
++  if (prediction) return 'collect';
++  return 'predict';
++}
++
++export function observedOutcome(mission:Mission, finding:Finding):string {
++  if (mission.kind === 'reference') {
++    if (finding.zScore === null || !Number.isFinite(finding.zScore)) throw new Error('Missing reference comparison');
++    return `The measured difference is ${finding.zScore.toFixed(2)} reported standard errors from the K=2 reference. ${finding.zScore <= 2 ? 'It passes this two-SEM screening rule.' : 'It fails this two-SEM screening rule.'} Neither outcome proves the physical model correct or incorrect.`;
++  }
++  const names=finding.summaries;
++  if (names.length !== 2) throw new Error('Pair mission requires two observations');
++  const phrase=finding.comparison === 'higher' ? 'higher than' : finding.comparison === 'lower' ? 'lower than' : 'approximately equal to';
++  return `“${names[1].label}” is ${phrase} “${names[0].label}” for this specific Green-function observable. The numerical difference is ${finding.difference.toFixed(5)}.`;
++}
++
++export function learningSteps(stage:MissionStage):ReadonlyArray<{id:MissionStage;title:string;detail:string}> {
++  return [
++    {id:'predict',title:'Predict',detail:'Choose a hypothesis before seeing the result'},
++    {id:'collect',title:'Collect',detail:'Request curated numerical evidence'},
++    {id:'interpret',title:'Interpret',detail:'Explain what the evidence supports'},
++    {id:'review',title:'Reflect',detail:'Read the explanation and record the discovery'},
++  ];
++}
++
++export const RESEARCH_GLOSSARY = [
++  {term:'Inverse temperature β',definition:'A parameter inversely proportional to temperature when the relevant energy units are fixed. Larger β means colder.'},
++  {term:'Green function',definition:'The quantity used in these missions describes particle addition at an imaginary-time separation. It is not a real-time particle trajectory.'},
++  {term:'Periodic cell',definition:'A simulation box repeated in every direction. Opposite sides represent the same spatial location.'},
++  {term:'Recorded benchmark',definition:'A saved result of a previous Monte Carlo experiment. Viewing it is not running a new simulation.'},
++  {term:'Replica SEM',definition:'The standard error estimated from independently seeded chain results. It represents sampling uncertainty, not all systematic biases.'},
++  {term:'Spectral reference',definition:'An independently computed finite-basis comparison. Matching it is a useful check, not a proof of continuum convergence.'},
++] as const;
+diff --git a/web/src/missions.css b/web/src/missions.css
+index 8873da2..d0aa030 100644
+--- a/web/src/missions.css
++++ b/web/src/missions.css
+@@ -40,3 +40,35 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,.mission-option:
+ @media(max-width:1100px) {.mission-layout {grid-template-columns:1fr}.mission-steps {grid-template-columns:repeat(2,minmax(0,1fr))}.mission-map {order:0}.mission-active {order:1}}
+ @media(max-width:650px) {.mission-dashboard {display:block}.mission-dashboard-meter {width:100%;margin-top:23px}.mission-steps {grid-template-columns:1fr}.mission-active {padding:18px}.mission-measurement-header {display:block}.mission-origin {display:block;margin-top:7px}.mission-dashboard-lead h2 {font-size:23px}}
+ @media(prefers-reduced-motion:reduce) {.mission-meter div,.mission-option {transition:none}}
++/* Patch 36: onboarding, explicit study stages, and accessible review. */
++.mission-guide{margin-bottom:20px;border-color:#365968}
++.mission-guide-head{display:flex;justify-content:space-between;align-items:center;gap:18px}
++.mission-guide-head h2{font-size:19px;margin:7px 0 0}
++.mission-guide-body{color:#c5d6e1;font-size:13px;line-height:1.8;max-width:1000px}
++.mission-guide-body p{margin:15px 0}
++.mission-guide-body strong{color:#e0f6ed}
++.mission-text-button{color:#8bead9;background:transparent;border:0;text-decoration:underline;cursor:pointer;padding:10px 0;font:inherit}
++.mission-glossary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:10px 0}
++.mission-glossary>div{padding:12px;background:#101f30;border:1px solid #36516a;border-radius:9px}
++.mission-glossary dt{color:#d7f7ee;font-weight:bold}
++.mission-glossary dd{margin:5px 0 0;color:#aac3d2;line-height:1.65}
++.mission-process ol{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;list-style:none;margin:19px 0 0;padding:0}
++.mission-process li{min-width:0;display:flex;align-items:center;gap:6px;font-size:11px;color:#90a9ba}
++.mission-process li span{display:grid;place-items:center;flex-shrink:0;width:24px;height:24px;border:1px solid #3a596e;border-radius:50%}
++.mission-process li.current{color:#dffef0}.mission-process li.current span{background:#28766c;border-color:#7be2cb}
++.mission-process li.done{color:#a6e0c9}.mission-process li.done span{border-color:#6abfa8}
++.mission-stage-help{color:#b6cdcf;font-size:12px;line-height:1.5;margin:12px 0 20px}
++.mission-observation-explanation{border-left:3px solid #6ed7bf;background:#19313d;color:#dcf5ee;padding:13px;font-size:13px;line-height:1.75}
++.mission-error{border:1px solid #cc9277;border-radius:9px;background:#322c30;color:#ffe5d4;padding:15px;margin-top:20px;font-size:13px;line-height:1.7}
++.mission-error p{margin:5px 0}
++.mission-next-question{background:#132b35;padding:12px;border-radius:8px}
++#mission-title:focus{outline:none}
++@media(max-width:650px){.mission-glossary{grid-template-columns:1fr}.mission-process li{flex-direction:column;text-align:center}.mission-process li strong{font-size:10px}.mission-guide-head{align-items:flex-start}}
++@media(prefers-reduced-motion:reduce){.mission-process *, .mission-guide *{transition:none!important;animation:none!important}}
++.mission-playtest{margin-top:20px}
++.mission-playtest h2{margin:10px 0;font-size:20px}
++.mission-playtest>p{font-size:13px;line-height:1.7;color:#bdd1dc}
++.mission-playtest-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin:18px 0}
++.mission-playtest-fields label{color:#d6e7ef;font-size:12px;line-height:1.5}
++.mission-playtest-fields textarea{display:block;margin-top:7px;width:100%;padding:10px;border:1px solid #476072;border-radius:8px;background:#0e2131;color:#f0fafb;resize:vertical;min-height:70px}
++@media(max-width:800px){.mission-playtest-fields{grid-template-columns:1fr}}
+diff --git a/web/tests/mission-engine.test.mjs b/web/tests/mission-engine.test.mjs
+index 31406d2..2f90ad9 100644
+--- a/web/tests/mission-engine.test.mjs
++++ b/web/tests/mission-engine.test.mjs
+@@ -13,13 +13,14 @@ const tmp=mkdtempSync(join(tmpdir(),'qme-mission-test-'));
+ const tsc=process.platform==='win32'?'tsc.cmd':'tsc';
+ try {
+   execFileSync(tsc,["--strict","--target","ES2021","--module","commonjs","--skipLibCheck",
+-    "--outDir",tmp,"src/missionEngine.ts"],{cwd:webRoot,stdio:'pipe'});
++    "--outDir",tmp,"src/missionEngine.ts","src/missionExperience.ts"],{cwd:webRoot,stdio:'pipe'});
+ } catch(e) {
+   rmSync(tmp,{recursive:true,force:true});
+   throw new Error(`Mission engine TypeScript compilation failed: ${e.stderr?.toString() || e.message}`);
+ }
+ const require=createRequire(import.meta.url);
+ const engine=require(join(tmp,'missionEngine.js'));
++const experience=require(join(tmp,'missionExperience.js'));
+ process.on('exit',()=>rmSync(tmp,{recursive:true,force:true}));
+ const {MISSIONS,EMPTY_PROGRESS,assessEvidence,recordCompletion,totalXp,isUnlocked,earnedBadges,validatedProgress}=engine;
+ 
+@@ -108,3 +109,35 @@ test('bounded storage recovery, stable achievements and graduated unlocks',()=>{
+   assert.equal(totalXp(two),80);
+   assert.equal(isUnlocked(two,MISSIONS[2]),true);
+ });
++
++
++test('mission guidance transitions never reveal an outcome before evidence',()=>{
++  const {missionStage,learningSteps}=experience;
++  const mission=m('thermal-detective');
++  assert.equal(missionStage(null,null,false),'predict');
++  assert.equal(missionStage('higher',null,false),'collect');
++  const evidence=assessEvidence(mission,[synthetic(mission.evidence[0],1.2),synthetic(mission.evidence[1],1.9)]);
++  assert.equal(missionStage('lower',evidence,false),'interpret');
++  assert.equal(missionStage('lower',evidence,true),'review');
++  assert.deepEqual(learningSteps('interpret').map(s=>s.id),['predict','collect','interpret','review']);
++});
++
++test('plain-language outcome derives from observed values, never predicted answer',()=>{
++  const {observedOutcome}=experience;
++  const mission=m('thermal-detective');
++  const up=assessEvidence(mission,[synthetic(mission.evidence[0],1.0),synthetic(mission.evidence[1],1.7)]);
++  const down=assessEvidence(mission,[synthetic(mission.evidence[0],2.0),synthetic(mission.evidence[1],1.3)]);
++  assert.match(observedOutcome(mission,up),/higher than/);
++  assert.match(observedOutcome(mission,down),/lower than/);
++  const referenceMission=m('uncertainty-investigator');
++  assert.match(observedOutcome(referenceMission,assessEvidence(referenceMission,[synthetic(referenceMission.evidence[0],1.685)])),/passes this two-SEM screening/);
++  assert.match(observedOutcome(referenceMission,assessEvidence(referenceMission,[synthetic(referenceMission.evidence[0],2.1)])),/fails this two-SEM screening/);
++  assert.match(observedOutcome(referenceMission,assessEvidence(referenceMission,[synthetic(referenceMission.evidence[0],1.685)])),/not.*proves|Neither outcome proves/);
++});
++
++test('glossary distinguishes imaginary time, history and uncertainty',()=>{
++  const terms=experience.RESEARCH_GLOSSARY;
++  assert(terms.length>=5);
++  assert(terms.some(item=>/Green function/.test(item.term) && /not a real-time/.test(item.definition)));
++  assert(terms.some(item=>/Recorded benchmark/.test(item.term) && /not running/.test(item.definition)));
++});
