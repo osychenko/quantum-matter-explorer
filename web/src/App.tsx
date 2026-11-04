@@ -3,6 +3,7 @@ import QuantumCell3D, {type QuantumView} from './QuantumCell3D';
 import MissionBoard from './MissionBoard';
 import ExpandedPhysicsLab, {OSC,STRUCT,type LiveResult} from './ExpandedPhysicsLab';
 import ComparisonLab from './ComparisonLab';
+import TheoryAtlas from './TheoryAtlas';
 import ScienceMapPage, {ScienceBrief, ScienceInspector, type ScienceMapData} from './ScienceMap';
 import {MISSION_PROGRESS_KEY, validatedProgress, totalXp, type MissionProgress} from './missionEngine';
 import './missions.css';
@@ -85,7 +86,8 @@ export default function App() {
   const [saved, setSaved] = useState<Saved[]>(readNotebook);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<'experiment'|'notebook'|'missions'|'science'|'comparisons'>('science');
+  const [tab, setTab] = useState<'experiment'|'notebook'|'missions'|'science'|'comparisons'|'atlas'>('science');
+  const [atlasTopicId,setAtlasTopicId] = useState('imaginary-time-projection');
   const [missionProgress, setMissionProgress] = useState<MissionProgress>(readMissionProgress);
   const [missionStorageWarning, setMissionStorageWarning] = useState('');
   const [sceneView, setSceneView] = useState<QuantumView>('configuration');
@@ -157,14 +159,16 @@ export default function App() {
       <button className={`nav-link ${tab === 'experiment' ? 'active' : ''}`} onClick={() => setTab('experiment')}>⌁ <span>Quantum laboratory</span></button>
       <button title="Science Map" aria-label="Science Map" className={`nav-link ${tab === 'science' ? 'active' : ''}`} onClick={() => setTab('science')}>◉ <span>Science Map</span></button>
       <button title="Comparison Laboratory" aria-label="Comparison Laboratory" className={`nav-link ${tab === 'comparisons' ? 'active' : ''}`} onClick={() => setTab('comparisons')}>⇄ <span>Comparison laboratory</span></button>
+      <button title="Quantum Theory Atlas" aria-label="Quantum Theory Atlas" className={`nav-link ${tab === 'atlas' ? 'active' : ''}`} onClick={() => setTab('atlas')}>◇ <span>Theory Atlas</span></button>
       <button title="Research missions" aria-label="Research missions" className={`nav-link ${tab === 'missions' ? 'active' : ''}`} onClick={() => setTab('missions')}>✦ <span>Research missions <small>{totalXp(missionProgress)} XP</small></span></button>
       <button className={`nav-link ${tab === 'notebook' ? 'active' : ''}`} onClick={() => setTab('notebook')}>▤ <span>Research notebook <small>{saved.length}</small></span></button>
-      <div className="sidebar-bottom"><div className="dot"/> Local educational engine<br/><small>Patch 39 · Compare & Understand</small></div>
+      <div className="sidebar-bottom"><div className="dot"/> Local educational engine<br/><small>Patch 40 · Theory & Methods</small></div>
     </aside>
     <main className="main">
-      <div className="topbar"><span>LABORATORY / {tab === 'experiment' ? 'EXPERIMENT 01' : tab === 'missions' ? 'RESEARCH MISSIONS' : tab === 'science' ? 'SCIENCE MAP' : tab === 'comparisons' ? 'COMPARISON LABORATORY' : 'NOTEBOOK'}</span><span className="top-status">● Engine v0.3 preview</span></div>
+      <div className="topbar"><span>LABORATORY / {tab === 'experiment' ? 'EXPERIMENT 01' : tab === 'missions' ? 'RESEARCH MISSIONS' : tab === 'science' ? 'SCIENCE MAP' : tab === 'comparisons' ? 'COMPARISON LABORATORY' : tab === 'atlas' ? 'THEORY ATLAS' : 'NOTEBOOK'}</span><span className="top-status">● Engine v0.3 preview</span></div>
       {tab === 'comparisons' && <ComparisonLab/>}
-      {tab === 'experiment' ? <>
+      {tab === 'atlas' && <TheoryAtlas data={scienceData} selectedTopicId={atlasTopicId} onSelectTopic={setAtlasTopicId} onOpenExperiment={openScienceExperiment}/>}
+      {(tab !== 'comparisons' && tab !== 'atlas') && (tab === 'experiment' ? <>
         <header className="hero"><span className="eyebrow">INTERACTIVE QUANTUM PHYSICS</span><h1>Explore the invisible.</h1>
           <p>Choose a scientifically scoped experiment, change its parameters and discover what the quantum model predicts.</p>
           <button type="button" className="outline expedition-invite" onClick={() => setTab('missions')}>✦ Start the four-mission research expedition →</button></header>
@@ -235,11 +239,11 @@ export default function App() {
           <p>{isIdeal ? 'This observable measures a particle-addition correlation in imaginary time. The analytic ideal-gas formula is evaluated numerically for the thermal partition function. It does not show particles moving in real time.' : 'This is a fixed recorded measurement of interacting bosons at M=8. Its uncertainty comes from independent Monte Carlo replicas. The result passed screening but has not been certified as a continuum-limit value.'}</p>
           {result && <details><summary>Scientific provenance and limitations</summary><ul>{result.cautions.map((c,i)=><li key={i}>{c}</li>)}</ul><p>Fingerprint: <code>{result.fingerprint_sha256}</code></p></details>}
         </section></>}
-      </> : tab === 'science' ? <><ScienceMapPage data={scienceData} onOpenExperiment={openScienceExperiment}/>{scienceError && <div className="error" role="alert">{scienceError}</div>}</> : tab === 'missions' ? <MissionBoard progress={missionProgress} onProgress={updateMissionProgress} storageWarning={missionStorageWarning}/> : <><header className="hero"><span className="eyebrow">YOUR INVESTIGATIONS</span><h1>Research notebook.</h1><p>Saved results are stored in this browser only. Export JSON files to retain them outside this device.</p></header>
+      </> : tab === 'science' ? <><ScienceMapPage data={scienceData} onOpenExperiment={openScienceExperiment} onOpenTheory={(id)=>{setAtlasTopicId(id);setTab('atlas');}}/>{scienceError && <div className="error" role="alert">{scienceError}</div>}</> : tab === 'missions' ? <MissionBoard progress={missionProgress} onProgress={updateMissionProgress} storageWarning={missionStorageWarning}/> : <><header className="hero"><span className="eyebrow">YOUR INVESTIGATIONS</span><h1>Research notebook.</h1><p>Saved results are stored in this browser only. Export JSON files to retain them outside this device.</p></header>
         <section className="panel notebook"><div className="panel-heading"><h2>Saved experiments ({saved.length})</h2></div>
           {saved.length===0 ? <p>No experiments saved yet. Visit the laboratory to create your first entry.</p> : saved.map((item,i)=><div className="saved-item" key={`${item.savedAt}-${i}`}><div><strong>{item.result.experiment_id}</strong><small>{new Date(item.savedAt).toLocaleString()} · {item.result.execution_mode.replaceAll('_',' ')}</small></div><div><strong>{item.result.observables[0].value.toFixed(5)}</strong><button onClick={()=>saveFile(`experiment-${i+1}.json`,JSON.stringify(item.result,null,2))}>Export</button></div></div>)}
           {saved.length>0&&<button className="outline" onClick={()=>{if(confirm('Clear all browser-only notebook entries?')){localStorage.removeItem(STORAGE_KEY);setSaved([]);}}}>Clear notebook</button>}
-        </section></>}
+        </section></>)}
       <footer>Quantum Matter Explorer · Local-first educational preview · Numerical research methods remain separate</footer>
     </main>
   </div>;

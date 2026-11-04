@@ -141,8 +141,9 @@ export function ScienceInspector({data, profile, result, matchedIdeal, sweepVari
   </section>;
 }
 
-export default function ScienceMapPage({data, onOpenExperiment}: {
+export default function ScienceMapPage({data, onOpenExperiment, onOpenTheory}: {
   data: ScienceMapData|null; onOpenExperiment: (presetId: string)=>void;
+  onOpenTheory: (topicId: string)=>void;
 }) {
   const [level, setLevel] = useState<'concept'|'physics'|'equation'>('physics');
   if (!data) return <div className="panel" role="status">Loading the Science Map…</div>;
@@ -168,11 +169,13 @@ export default function ScienceMapPage({data, onOpenExperiment}: {
       </details>)}</div>
     </section>
     <section className="science-theory-atlas" aria-labelledby="theory-atlas-title"><div className="science-heading"><div><span className="eyebrow">PHYSICS NOTES</span><h2 id="theory-atlas-title">The theory, at your level</h2></div>
+      <button type="button" className="outline" onClick={()=>onOpenTheory('imaginary-time-projection')}>Open interactive Theory Atlas →</button>
       <div className="science-depth" role="group" aria-label="Explanation depth">
         {(['concept','physics','equation'] as const).map(v=><button type="button" key={v} className={level===v?'active':''} aria-pressed={level===v} onClick={()=>setLevel(v)}>{v==='equation'?'Mathematics':v==='physics'?'Physics':'Concept'}</button>)}
       </div></div>
       <div className="science-theory-grid">{data.theory.map(topic=><article className="panel science-theory-card" key={topic.id}>
         <h3>{topic.title}</h3>
+        <button type="button" className="outline" onClick={()=>onOpenTheory(topic.id)}>Read and explore →</button>
         {level === 'equation' ? <><pre className="science-equation">{topic.equation}</pre><p>{topic.interpretation}</p></> : <p>{topic[level]}</p>}
       </article>)}</div>
     </section>

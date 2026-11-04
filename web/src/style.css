@@ -105,3 +105,34 @@ button:focus-visible,summary:focus-visible,.science-depth button:focus-visible{o
 .comparison-interpretation .comparison-logic-grid {grid-template-columns:repeat(2,minmax(0,1fr))}
 .comparison-interpretation code,.comparison-arm code {overflow-wrap:anywhere}
 @media(max-width:900px) {.comparison-logic-grid {grid-template-columns:1fr}.comparison-arm-grid,.comparison-curve-grid,.comparison-interpretation .comparison-logic-grid {grid-template-columns:1fr}}
+
+/* Patch 40: interactive theory, no misleading Monte Carlo presentation. */
+.theory-atlas-page {max-width:1200px;margin:auto;padding-bottom:3rem}
+.theory-atlas-page .hero {margin-bottom:1.5rem}
+.theory-atlas-layout {display:grid;grid-template-columns:minmax(225px,280px) minmax(0,1fr);gap:1.2rem;align-items:start}
+.theory-topic-nav {display:flex;flex-direction:column;gap:.45rem;position:sticky;top:1rem}
+.theory-topic-nav .eyebrow {margin-bottom:.6rem}
+.theory-topic-nav button {width:100%;border:1px solid #2e4a60;border-radius:9px;background:#14283b;color:#d4e5ee;text-align:left;padding:.75rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:.6rem;font:inherit;font-size:.85rem}
+.theory-topic-nav button:hover,.theory-topic-nav button:focus-visible {border-color:#7be5d7}
+.theory-topic-nav button.active {background:#20434a;border-color:#70dacd;color:#eafffa}
+.theory-topic-nav small {font-size:.56rem;letter-spacing:.04em;color:#8eebdf}
+.theory-atlas-content {display:grid;gap:1.2rem;min-width:0}
+.theory-reading h2,.theory-demo h3 {margin:.65rem 0 1rem}
+.theory-reading p,.theory-demo p,.theory-related p {line-height:1.6;color:#c5d8e4}
+.theory-reading .science-depth {margin:1rem 0}
+.theory-note {border-left:3px solid #598b9a;padding-left:1rem;font-size:.9rem}
+.theory-controls {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem 1.2rem;margin:1.3rem 0}
+.theory-range {min-width:0}.theory-range div {display:flex;justify-content:space-between;gap:.8rem;font-size:.85rem;color:#c5d6e1;margin-bottom:.4rem}
+.theory-range output {color:#82eddf;font-variant-numeric:tabular-nums}
+.theory-range input {display:block;width:100%;accent-color:#8de2d5}
+.theory-figure {margin:1rem 0}.theory-plot {display:block;width:100%;max-width:680px;height:auto;border-radius:10px;border:1px solid #304c62;background:#102237}
+.theory-figure figcaption {font-size:.82rem;line-height:1.55;color:#b7cad9;margin:.55rem .1rem}
+.theory-results {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem;margin:1rem 0}
+.theory-results>div {background:#112a39;border:1px solid #2b5061;border-radius:9px;padding:.85rem;display:flex;flex-direction:column;gap:.4rem}
+.theory-results span {font-size:.8rem;color:#afc6d4}.theory-results strong {color:#e5f7f2;font-variant-numeric:tabular-nums;font-size:1.35rem}
+.theory-mode,.theory-demo-links {display:flex;flex-wrap:wrap;gap:.6rem;margin:.9rem 0}
+.theory-mode button {padding:.65rem .9rem;background:#153149;border:1px solid #3b596e;border-radius:8px;color:#d5e5ef;cursor:pointer}
+.theory-mode button.active {background:#22534f;border-color:#7de7d8;color:white}
+.theory-demo-links button {max-width:100%;white-space:normal;text-align:left}
+@media(max-width:900px) {.theory-atlas-layout {grid-template-columns:1fr}.theory-topic-nav {position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.theory-topic-nav .eyebrow {grid-column:1/-1}}
+@media(max-width:600px) {.theory-topic-nav,.theory-controls,.theory-results {grid-template-columns:1fr}}
