@@ -73,7 +73,7 @@ export default function MissionBoard({progress,onProgress,storageWarning}:Props)
   const badges=earnedBadges(progress);
   const xp=totalXp(progress);
   const stage=missionStage(prediction,finding,feedback);
-  const steps=learningSteps(stage);
+  const steps=learningSteps();
   const stageIndex=steps.findIndex(s=>s.id===stage);
 
   useEffect(()=>()=>controller.current?.abort(),[active]);

@@ -22,7 +22,7 @@ export function observedOutcome(mission:Mission, finding:Finding):string {
   return `“${names[1].label}” is ${phrase} “${names[0].label}” for this specific Green-function observable. The numerical difference is ${finding.difference.toFixed(5)}.`;
 }
 
-export function learningSteps(stage:MissionStage):ReadonlyArray<{id:MissionStage;title:string;detail:string}> {
+export function learningSteps():ReadonlyArray<{id:MissionStage;title:string;detail:string}> {
   return [
     {id:'predict',title:'Predict',detail:'Choose a hypothesis before seeing the result'},
     {id:'collect',title:'Collect',detail:'Request curated numerical evidence'},
