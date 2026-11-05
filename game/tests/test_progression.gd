@@ -32,6 +32,8 @@ func run_tests() -> void:
     state.echo_gate_cleared = true
     state.realm_checkpoint_reached = true
     state.realm_gate_cleared = true
+    state.calibration_gate_cleared = true
+    state.calibration_chamber_cleared = true
     check(state.save_to_path(TEST_PATH), "Progress writes to an isolated test file")
 
     var loaded = STATE.new()
@@ -44,10 +46,13 @@ func run_tests() -> void:
     check(loaded.echo_gate_cleared, "G4 gate completion survives restart")
     check(loaded.realm_checkpoint_reached and loaded.realm_gate_cleared,
             "G5 checkpoint and realm completion survive restart")
+    check(loaded.calibration_gate_cleared and loaded.calibration_chamber_cleared,
+            "G7 gate and room completion survive restart")
     loaded.reset()
     check(not loaded.is_unlocked(STATE.TUNNELING) and not loaded.checkpoint_reached \
             and not loaded.chamber_cleared and not loaded.echo_gate_cleared \
-            and not loaded.realm_checkpoint_reached and not loaded.realm_gate_cleared,
+            and not loaded.realm_checkpoint_reached and not loaded.realm_gate_cleared \
+            and not loaded.calibration_gate_cleared and not loaded.calibration_chamber_cleared,
             "Reset clears all progress")
     check(loaded.save_to_path(TEST_PATH), "Reset state is persisted")
 
@@ -64,6 +69,8 @@ func run_tests() -> void:
         file.close()
         check(empty_again.load_from_path(TEST_PATH), "Legacy G3 save remains readable")
         check(not empty_again.echo_gate_cleared, "Legacy G3 completion does not solve G4 gate")
+        check(not empty_again.calibration_gate_cleared and not empty_again.calibration_chamber_cleared,
+                "Legacy G3 save does not grant G7 progress")
         check(not empty_again.realm_checkpoint_reached and not empty_again.realm_gate_cleared,
                 "Legacy G3 save defaults G5 flags safely")
 

@@ -54,6 +54,7 @@ var _f_was_pressed := false
 var _i_was_pressed := false
 var _n_was_pressed := false
 var _m_was_pressed := false
+var _p_was_pressed := false
 var _status_time := 0.0
 
 
@@ -79,7 +80,9 @@ func _ready() -> void:
     if persistence_enabled:
         progression.load_from_path()
     _restore_progression()
-    if player.imaginary_time_unlocked:
+    if progression.chamber_cleared:
+        _show_status("Barrier Ruins cleared: press P to enter the G7 Calibration Chamber.", 8.0)
+    elif player.imaginary_time_unlocked:
         _show_status("Realm unlocked: press R near the green gate; cross the spectral bridge.", 6.0)
     elif player.echoes_unlocked:
         _show_status("Echoes restored. Press Q to replay motion at the violet switch.", 6.0)
@@ -322,8 +325,8 @@ func _process(delta: float) -> void:
     var active: Variant = player.get_nearby_barrier()
     var near: bool = active != null
     var probability: Dictionary = active.transmission() if near else barrier.transmission()
-    if win:
-        hint_text.text = "CHAMBER CLEARED  ·  M MEASUREMENT LAB NEAR BARRIERS  ·  I INVENTORY"
+    if progression.chamber_cleared:
+        hint_text.text = "CHAMBER CLEARED  ·  PRESS P FOR G7 CALIBRATION CHAMBER  ·  I INVENTORY"
     elif not player.tunneling_unlocked:
         hint_text.text = "TUNNELING LOCKED · FIND BLUE CORE · M LAB NEAR BARRIER · I INVENTORY"
     elif near:
@@ -335,6 +338,11 @@ func _process(delta: float) -> void:
         hint_text.text = "WALK OVER VIOLET PAD  ·  Q REPLAY (22)  ·  CROSS THE OPEN GATE  ·  I INVENTORY"
     elif player.tunneling_unlocked:
         hint_text.text = "A/D MOVE · SPACE JUMP · E TUNNEL · Q ECHO · R REALM · M LAB · I INVENTORY"
+    var p_pressed := Input.is_physical_key_pressed(KEY_P)
+    if p_pressed and not _p_was_pressed and progression.chamber_cleared:
+        get_tree().change_scene_to_file("res://scenes/CalibrationChamber.tscn")
+        return
+    _p_was_pressed = p_pressed
     var f_pressed := Input.is_physical_key_pressed(KEY_F)
     if f_pressed and not _f_was_pressed:
         science_panel.visible = not science_panel.visible
@@ -377,6 +385,7 @@ func _refresh_inventory() -> void:
     var checkpoint_status := "ACTIVE" if checkpoint_activated else "NOT REACHED"
     var echo_cleared := "YES" if progression.echo_gate_cleared else "NO"
     var realm_cleared := "YES" if progression.realm_gate_cleared else "NO"
+    var calibration_status := "COMPLETE" if progression.calibration_chamber_cleared else ("GATE OPEN" if progression.calibration_gate_cleared else "PENDING")
     inventory_body.text = ("QUANTUM ABILITIES  /  DISCOVERY JOURNAL\n\n"
             + "1. QUANTUM TUNNELING  [%s]\n" % tunneling_status
             + "   Blue core; [E]; exact stationary 1D transmission.\n\n"
@@ -389,6 +398,7 @@ func _refresh_inventory() -> void:
             + "   Inspired by exp[-τ(H-Eref)], NOT time travel/QMC.\n\n"
             + "Checkpoint: %s    Echo puzzle: %s    Realm: %s\n" % [
                     checkpoint_status, echo_cleared, realm_cleared]
+            + "G7 Calibration: %s   [P] enter after first chamber is cleared\n" % calibration_status
             + "[I] close    [SHIFT+N] reset local progress")
 
 
@@ -546,6 +556,7 @@ func _reset_progression() -> void:
     checkpoint.set_marker_active(false)
     realm_checkpoint.set_marker_active(false)
     win = false
+    _p_was_pressed = false
     ability_relic.set_deferred("monitoring", true)
     echo_relic.set_deferred("monitoring", true)
     imaginary_relic.set_deferred("monitoring", true)
@@ -577,7 +588,7 @@ func _on_goal_reached(body: Node2D) -> void:
     progression.realm_gate_cleared = true
     _save_progression()
     _refresh_inventory()
-    _show_status("CHAMBER CLEARED — Tunneling, Echoes, and Realm mastered!", 9999.0)
+    _show_status("CHAMBER CLEARED — Press P for the G7 Calibration Chamber.", 9999.0)
 
 
 func _on_checkpoint(body: Node2D) -> void:

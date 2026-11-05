@@ -3,6 +3,8 @@ extends PanelContainer
 ## Built at runtime so no separate scene/art dependency is required.
 
 signal close_requested
+signal batch_completed(result: Dictionary)
+signal settings_changed
 
 const EXPERIMENT = preload("res://scripts/MeasurementExperiment.gd")
 const MODEL = preload("res://scripts/TunnelingModel.gd")
@@ -21,6 +23,7 @@ var energy_spin: SpinBox
 var width_spin: SpinBox
 var seed_spin: SpinBox
 var barrier_label: Label
+var guidance_label: Label
 var predicted_label: Label
 var sample_label: Label
 var total_label: Label
@@ -58,7 +61,7 @@ func _ready() -> void:
     close_button.pressed.connect(_request_close)
     header.add_child(close_button)
 
-    _new_label(vertical,
+    guidance_label = _new_label(vertical,
             "Stationary 1D scattering: each trial is transmitted or reflected.\n"
             + "Sampling is a teaching experiment, NOT quantum Monte Carlo.",
             15, Color("#c2dce5"))
@@ -157,6 +160,12 @@ func _make_bar(parent: Node, color: Color) -> ProgressBar:
     return bar
 
 
+func set_challenge_text(message: String) -> void:
+    # Optional puzzle instruction inside the lab, without altering G6 defaults.
+    if guidance_label != null:
+        guidance_label.text = message
+
+
 func configure_barrier(source: Node, display_name: String) -> void:
     barrier_name = display_name
     barrier_height = float(source.get("barrier_height"))
@@ -175,6 +184,7 @@ func _restore_defaults() -> void:
 
 func _on_parameters_changed(_value: float) -> void:
     clear_results()
+    settings_changed.emit()
 
 
 func _refresh_prediction() -> void:
@@ -215,6 +225,8 @@ func run_batch(count: int) -> Dictionary:
         total_trials += int(result["trials"])
         total_transmitted += int(result["transmitted"])
     _refresh_results()
+    if result.get("valid", false):
+        batch_completed.emit(result.duplicate())
     return result
 
 

@@ -1,0 +1,141 @@
+[gd_scene load_steps=14 format=3]
+
+[ext_resource type="Script" path="res://scripts/CalibrationChamber.gd" id="1_level"]
+[ext_resource type="Script" path="res://scripts/Player.gd" id="1_player"]
+[ext_resource type="Script" path="res://scripts/LevelPlatform.gd" id="1_platform"]
+[ext_resource type="Script" path="res://scripts/WorldMarker.gd" id="1_marker"]
+[ext_resource type="Script" path="res://scripts/CalibrationConsole.gd" id="1_console"]
+
+[sub_resource type="RectangleShape2D" id="Rect_player"]
+size = Vector2(26, 44)
+
+[sub_resource type="RectangleShape2D" id="Rect_ground"]
+size = Vector2(1640, 100)
+
+[sub_resource type="RectangleShape2D" id="Rect_wall"]
+size = Vector2(40, 1200)
+
+[sub_resource type="RectangleShape2D" id="Rect_gate"]
+size = Vector2(44, 640)
+
+[sub_resource type="RectangleShape2D" id="Rect_ledge"]
+size = Vector2(170, 22)
+
+[sub_resource type="RectangleShape2D" id="Rect_hazard"]
+size = Vector2(140, 40)
+
+[sub_resource type="CircleShape2D" id="Circle_checkpoint"]
+radius = 30.0
+
+[sub_resource type="CircleShape2D" id="Circle_goal"]
+radius = 44.0
+
+[node name="CalibrationChamber" type="Node2D"]
+script = ExtResource("1_level")
+
+[node name="Player" type="CharacterBody2D" parent="."]
+position = Vector2(160, 595)
+collision_layer = 4
+collision_mask = 3
+script = ExtResource("1_player")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player"]
+shape = SubResource("Rect_player")
+
+[node name="Camera2D" type="Camera2D" parent="Player"]
+enabled = true
+position_smoothing_enabled = true
+position_smoothing_speed = 5.0
+limit_left = 0
+limit_top = 0
+limit_right = 1640
+limit_bottom = 720
+
+[node name="Ground" type="StaticBody2D" parent="."]
+position = Vector2(820, 690)
+collision_layer = 1
+collision_mask = 0
+script = ExtResource("1_platform")
+dimensions = Vector2(1640, 100)
+fill_color = Color(0.070588, 0.145098, 0.219608, 1)
+edge_color = Color(0.470588, 0.776471, 0.729412, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ground"]
+shape = SubResource("Rect_ground")
+
+[node name="LeftBoundary" type="StaticBody2D" parent="."]
+position = Vector2(-20, 360)
+collision_layer = 1
+collision_mask = 0
+script = ExtResource("1_platform")
+dimensions = Vector2(40, 1200)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="LeftBoundary"]
+shape = SubResource("Rect_wall")
+
+[node name="RightBoundary" type="StaticBody2D" parent="."]
+position = Vector2(1660, 360)
+collision_layer = 1
+collision_mask = 0
+script = ExtResource("1_platform")
+dimensions = Vector2(40, 1200)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="RightBoundary"]
+shape = SubResource("Rect_wall")
+
+[node name="CalibrationGate" type="StaticBody2D" parent="."]
+position = Vector2(820, 320)
+collision_layer = 2
+collision_mask = 0
+script = ExtResource("1_platform")
+dimensions = Vector2(44, 640)
+fill_color = Color(0.18, 0.47, 0.7, 1)
+edge_color = Color(0.5, 0.92, 1, 1)
+gate_style = true
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CalibrationGate"]
+shape = SubResource("Rect_gate")
+
+[node name="RightLedge" type="StaticBody2D" parent="."]
+position = Vector2(1260, 555)
+collision_layer = 1
+collision_mask = 0
+script = ExtResource("1_platform")
+dimensions = Vector2(170, 22)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="RightLedge"]
+shape = SubResource("Rect_ledge")
+
+[node name="CalibrationConsole" type="Node2D" parent="."]
+position = Vector2(385, 570)
+script = ExtResource("1_console")
+
+[node name="Checkpoint" type="Area2D" parent="."]
+position = Vector2(970, 585)
+collision_layer = 0
+collision_mask = 4
+script = ExtResource("1_marker")
+marker_kind = "checkpoint"
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Checkpoint"]
+shape = SubResource("Circle_checkpoint")
+
+[node name="Hazard" type="Area2D" parent="."]
+position = Vector2(1120, 620)
+collision_layer = 0
+collision_mask = 4
+script = ExtResource("1_marker")
+marker_kind = "hazard"
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Hazard"]
+shape = SubResource("Rect_hazard")
+
+[node name="Goal" type="Area2D" parent="."]
+position = Vector2(1500, 585)
+collision_layer = 0
+collision_mask = 4
+script = ExtResource("1_marker")
+marker_kind = "goal"
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Goal"]
+shape = SubResource("Circle_goal")

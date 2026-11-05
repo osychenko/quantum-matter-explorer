@@ -14,6 +14,8 @@ var chamber_cleared := false
 var echo_gate_cleared := false
 var realm_checkpoint_reached := false
 var realm_gate_cleared := false
+var calibration_gate_cleared := false
+var calibration_chamber_cleared := false
 
 
 func is_unlocked(ability_id: String) -> bool:
@@ -35,6 +37,8 @@ func reset() -> void:
     echo_gate_cleared = false
     realm_checkpoint_reached = false
     realm_gate_cleared = false
+    calibration_gate_cleared = false
+    calibration_chamber_cleared = false
 
 
 func to_dictionary() -> Dictionary:
@@ -46,6 +50,8 @@ func to_dictionary() -> Dictionary:
         "echo_gate_cleared": echo_gate_cleared,
         "realm_checkpoint_reached": realm_checkpoint_reached,
         "realm_gate_cleared": realm_gate_cleared,
+        "calibration_gate_cleared": calibration_gate_cleared,
+        "calibration_chamber_cleared": calibration_chamber_cleared,
     }
 
 
@@ -88,10 +94,14 @@ func load_from_path(path: String = SAVE_PATH) -> bool:
     var saved_echo_gate: Variant = data.get("echo_gate_cleared", false)
     var saved_realm_checkpoint: Variant = data.get("realm_checkpoint_reached", false)
     var saved_realm_gate: Variant = data.get("realm_gate_cleared", false)
+    var saved_calibration_gate: Variant = data.get("calibration_gate_cleared", false)
+    var saved_calibration_chamber: Variant = data.get("calibration_chamber_cleared", false)
     if typeof(saved_unlocks) != TYPE_ARRAY or typeof(saved_checkpoint) != TYPE_BOOL \
             or typeof(saved_cleared) != TYPE_BOOL or typeof(saved_echo_gate) != TYPE_BOOL \
             or typeof(saved_realm_checkpoint) != TYPE_BOOL \
-            or typeof(saved_realm_gate) != TYPE_BOOL:
+            or typeof(saved_realm_gate) != TYPE_BOOL \
+            or typeof(saved_calibration_gate) != TYPE_BOOL \
+            or typeof(saved_calibration_chamber) != TYPE_BOOL:
         return false
     # Accept only recognized ability IDs, and only after validating the save.
     reset()
@@ -103,4 +113,6 @@ func load_from_path(path: String = SAVE_PATH) -> bool:
     echo_gate_cleared = saved_echo_gate
     realm_checkpoint_reached = saved_realm_checkpoint
     realm_gate_cleared = saved_realm_gate
+    calibration_gate_cleared = saved_calibration_gate
+    calibration_chamber_cleared = saved_calibration_chamber
     return true
