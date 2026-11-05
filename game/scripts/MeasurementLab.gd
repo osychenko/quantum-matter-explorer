@@ -54,7 +54,8 @@ func _ready() -> void:
 
     var header := HBoxContainer.new()
     vertical.add_child(header)
-    _new_label(header, "QUANTUM MEASUREMENT LAB", 23, Color("#d8f7ff"))
+    var title_label := _new_label(header, "QUANTUM MEASUREMENT LAB", 23, Color("#d8f7ff"))
+    title_label.autowrap_mode = TextServer.AUTOWRAP_OFF
     var space := Control.new()
     space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     header.add_child(space)
