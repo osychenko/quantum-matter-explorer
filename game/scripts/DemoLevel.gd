@@ -27,6 +27,9 @@ var _discovery_announced := false
 
 func _ready() -> void:
     _make_solid("Ground", Vector2(WORLD_WIDTH / 2.0, 690), Vector2(WORLD_WIDTH, 100))
+    # Invisible walls prevent the player from leaving the playable world.
+    _make_solid("LeftBoundary", Vector2(-20, 360), Vector2(40, 1200))
+    _make_solid("RightBoundary", Vector2(WORLD_WIDTH + 20, 360), Vector2(40, 1200))
     _make_solid("LeftLedge", Vector2(450, 550), Vector2(160, 22))
     _make_solid("RightLedge", Vector2(1400, 535), Vector2(180, 22))
     player.barrier = barrier
@@ -177,6 +180,12 @@ func _refresh_science_for(active: Variant) -> void:
 
 
 func _process(delta: float) -> void:
+    # Recover from falling outside the playable area.
+    if player.global_position.y > 900.0:
+        player.global_position = respawn_position
+        player.velocity = Vector2.ZERO
+        _show_status("Fell outside the world — returned to checkpoint.")
+    coherence_bar.value = player.coherence    
     coherence_bar.value = player.coherence
     var active: Variant = player.get_nearby_barrier()
     var near: bool = active != null
