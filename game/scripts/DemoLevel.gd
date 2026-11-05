@@ -30,7 +30,7 @@ func _ready() -> void:
     _make_solid("LeftLedge", Vector2(450, 550), Vector2(160, 22))
     _make_solid("RightLedge", Vector2(1400, 535), Vector2(180, 22))
     player.barrier = barrier
-    player.additional_barriers = [barrier2]
+    player.additional_barriers.append(barrier2)
     checkpoint.body_entered.connect(_on_checkpoint)
     hazard.body_entered.connect(_on_hazard)
     player.tunneling_result.connect(_on_tunneling_result)
