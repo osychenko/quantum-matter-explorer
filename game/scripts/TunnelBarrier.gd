@@ -12,14 +12,25 @@ const REACH_FROM_FACE := 84.0
 @export var kinetic_coefficient := 0.5
 
 var visual_clock := 0.0
+var pulse_time := 0.0
+var pulse_success := false
+
+func show_attempt(success: bool) -> void:
+    pulse_success = success
+    pulse_time = 0.62
+
 
 
 func _process(delta: float) -> void:
     visual_clock += delta
+    pulse_time = maxf(0.0, pulse_time - delta)
     queue_redraw()
 
 
 func _draw() -> void:
+    if pulse_time > 0.0:
+        var flash := Color(0.21, 1.0, 0.61, pulse_time * 0.42) if pulse_success else Color(1.0, 0.39, 0.40, pulse_time * 0.42)
+        draw_rect(Rect2(-55, -320, 110, 640), flash)
     draw_rect(Rect2(-50, -320, 100, 640), Color(0.17, 0.83, 1.0, 0.07))
     draw_rect(Rect2(-36, -320, 72, 640), Color(0.11, 0.42, 0.78, 0.52))
     for i in range(11):
@@ -71,6 +82,8 @@ func try_tunnel(player: CharacterBody2D, coherence: float,
                 "reason": "Exit space is occupied; tunneling cancelled safely."}
     var result: Dictionary = MODEL.attempt(incident_energy, barrier_height, model_width,
             kinetic_coefficient, coherence, MODEL.DEFAULT_COST, rng)
+    if result["attempted"]:
+        show_attempt(result["success"])
     if result["success"]:
         result["destination"] = destination
     return result

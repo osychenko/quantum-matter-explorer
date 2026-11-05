@@ -4,7 +4,14 @@ extends CharacterBody2D
 signal tunneling_result(outcome: Dictionary)
 
 const WALK_SPEED := 285.0
-const ACCELERATION := 2100.0
+const ACCELERATION := 2350.0
+const GROUND_FRICTION := 2600.0
+const AIR_ACCELERATION := 1350.0
+const AIR_FRICTION := 650.0
+const COYOTE_TIME := 0.11
+const JUMP_BUFFER_TIME := 0.12
+const JUMP_CUT_MULTIPLIER := 0.45
+const TUNNEL_COOLDOWN := 0.32
 const JUMP_SPEED := -530.0
 const GRAVITY := 1400.0
 const MAX_COHERENCE := 100.0
@@ -12,6 +19,10 @@ const REGEN_PER_SECOND := 8.0
 
 var coherence := MAX_COHERENCE
 var barrier: Variant = null
+var additional_barriers: Array[StaticBody2D] = []
+var coyote_remaining := 0.0
+var jump_buffer_remaining := 0.0
+var tunnel_cooldown_remaining := 0.0
 var discovered := false
 var rng := RandomNumberGenerator.new()
 var rng_initial_seed: int = 0
@@ -19,6 +30,7 @@ var attempts := 0
 var glow_time := 0.0
 var facing := 1.0
 var _e_was_pressed := false
+var _space_was_pressed := false
 
 
 func _ready() -> void:
@@ -28,19 +40,38 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
     coherence = minf(MAX_COHERENCE, coherence + REGEN_PER_SECOND * delta)
+    tunnel_cooldown_remaining = maxf(0.0, tunnel_cooldown_remaining - delta)
     var right_down := Input.is_physical_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)
     var left_down := Input.is_physical_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT)
     var axis := int(right_down) - int(left_down)
-    velocity.x = move_toward(velocity.x, float(axis) * WALK_SPEED, ACCELERATION * delta)
-    if axis != 0:
+    var on_ground := is_on_floor()
+    if on_ground:
+        coyote_remaining = COYOTE_TIME
+    else:
+        coyote_remaining = maxf(0.0, coyote_remaining - delta)
+    if Input.is_action_just_pressed("ui_accept") or (Input.is_physical_key_pressed(KEY_SPACE) and not _space_was_pressed):
+        jump_buffer_remaining = JUMP_BUFFER_TIME
+    else:
+        jump_buffer_remaining = maxf(0.0, jump_buffer_remaining - delta)
+    var space_pressed := Input.is_physical_key_pressed(KEY_SPACE)
+    _space_was_pressed = space_pressed
+    var acceleration := ACCELERATION if on_ground else AIR_ACCELERATION
+    var friction := GROUND_FRICTION if on_ground else AIR_FRICTION
+    if axis == 0:
+        velocity.x = move_toward(velocity.x, 0.0, friction * delta)
+    else:
+        velocity.x = move_toward(velocity.x, float(axis) * WALK_SPEED, acceleration * delta)
         facing = float(axis)
-    if not is_on_floor():
+    if not on_ground:
         velocity.y += GRAVITY * delta
-    if is_on_floor() and Input.is_action_just_pressed("ui_accept"):
+    if jump_buffer_remaining > 0.0 and coyote_remaining > 0.0:
         velocity.y = JUMP_SPEED
+        jump_buffer_remaining = 0.0
+        coyote_remaining = 0.0
+    if Input.is_action_just_released("ui_accept") and velocity.y < 0.0:
+        velocity.y *= JUMP_CUT_MULTIPLIER
     move_and_slide()
-    if barrier != null and barrier.has_method("is_near_player") \
-            and barrier.is_near_player(self):
+    if _nearby_barrier() != null:
         discovered = true
     var e_pressed := Input.is_physical_key_pressed(KEY_E)
     if e_pressed and not _e_was_pressed:
@@ -51,17 +82,40 @@ func _physics_process(delta: float) -> void:
     queue_redraw()
 
 
+func _nearby_barrier() -> Variant:
+    var nearest: Variant = null
+    var nearest_distance := INF
+    for candidate in [barrier] + additional_barriers:
+        if candidate != null and candidate.has_method("is_near_player") and candidate.is_near_player(self):
+            var distance := absf(global_position.x - candidate.global_position.x)
+            if distance < nearest_distance:
+                nearest_distance = distance
+                nearest = candidate
+    return nearest
+
+
+func get_nearby_barrier() -> Variant:
+    return _nearby_barrier()
+
+
 func attempt_tunneling() -> Dictionary:
-    if not discovered or barrier == null:
+    var active: Variant = _nearby_barrier()
+    if not discovered or active == null:
         var not_found := {"attempted": false, "success": false, "cost": 0.0,
                 "reason": "Discover a barrier before using tunneling."}
         tunneling_result.emit(not_found)
         return not_found
-    var outcome: Dictionary = barrier.try_tunnel(self, coherence, rng)
+    if tunnel_cooldown_remaining > 0.0:
+        var cooling := {"attempted": false, "success": false, "cost": 0.0,
+                "reason": "Tunneling is recharging."}
+        tunneling_result.emit(cooling)
+        return cooling
+    var outcome: Dictionary = active.try_tunnel(self, coherence, rng)
     if outcome.get("attempted", false):
         coherence -= float(outcome["cost"])
         attempts += 1
         glow_time = 0.42
+        tunnel_cooldown_remaining = TUNNEL_COOLDOWN
         if outcome["success"]:
             global_position = outcome["destination"]
             velocity = Vector2.ZERO
@@ -71,6 +125,10 @@ func attempt_tunneling() -> Dictionary:
 
 func _draw() -> void:
     if glow_time > 0.0:
+        for i in range(4):
+            var alpha := glow_time * (0.13 + float(i) * 0.05)
+            draw_arc(Vector2(-facing * float(i) * 11.0, -6), 24.0 + float(i) * 9.0,
+                    0, TAU, 48, Color(0.40, 0.90, 1.0, alpha), 2.0)
         draw_circle(Vector2(0, -6), 31.0 + 8.0 * glow_time,
                 Color(0.25, 0.89, 1.0, glow_time * 0.4))
     # Original simple geometric avatar; no external art assets or IP.

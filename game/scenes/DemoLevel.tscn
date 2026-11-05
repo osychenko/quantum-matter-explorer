@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/DemoLevel.gd" id="1_level"]
 [ext_resource type="Script" path="res://scripts/Player.gd" id="2_player"]
@@ -12,6 +12,9 @@ size = Vector2(72, 640)
 
 [sub_resource type="CircleShape2D" id="Circle_goal"]
 radius = 44.0
+
+[sub_resource type="RectangleShape2D" id="Rect_hazard"]
+size = Vector2(72, 40)
 
 [node name="DemoLevel" type="Node2D"]
 script = ExtResource("1_level")
@@ -42,6 +45,35 @@ script = ExtResource("3_barrier")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Barrier"]
 shape = SubResource("Rect_barrier")
+
+[node name="Barrier2" type="StaticBody2D" parent="."]
+position = Vector2(1480, 320)
+collision_layer = 2
+collision_mask = 0
+script = ExtResource("3_barrier")
+barrier_height = 1.5
+model_width = 1.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Barrier2"]
+shape = SubResource("Rect_barrier")
+
+[node name="Checkpoint" type="Area2D" parent="."]
+position = Vector2(1160, 585)
+collision_layer = 0
+collision_mask = 4
+monitoring = true
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Checkpoint"]
+shape = SubResource("Circle_goal")
+
+[node name="Hazard" type="Area2D" parent="."]
+position = Vector2(1300, 620)
+collision_layer = 0
+collision_mask = 4
+monitoring = true
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Hazard"]
+shape = SubResource("Rect_hazard")
 
 [node name="Goal" type="Area2D" parent="."]
 position = Vector2(1770, 585)

@@ -30,6 +30,12 @@ func run_tests() -> void:
     check(floor is StaticBody2D, "Demo has physical ground")
     check(barrier is StaticBody2D, "Barrier is a real collision body")
     check(player is CharacterBody2D, "Player uses a physics character body")
+    var barrier2 = level.get_node("Barrier2")
+    check(barrier2 is StaticBody2D, "Second barrier is a real collision body")
+    check(barrier2.transmission()["probability"] < barrier.transmission()["probability"],
+            "Second barrier is harder for the same incoming particle")
+    check(level.get_node("Checkpoint") is Area2D, "Checkpoint trigger exists")
+    check(level.get_node("Hazard") is Area2D, "Hazard trigger exists")
     check(level.get_node_or_null("HUD") != null, "A HUD is mounted")
     player.global_position = Vector2(830, 606)
     player.velocity = Vector2.ZERO
@@ -64,6 +70,12 @@ func run_tests() -> void:
     check(result["attempted"], "Within-range, sufficient-energy attempt is eligible")
     check(absf(player.coherence - (before - 18.0)) < 0.1,
             "Eligible attempt spends exactly 18 Coherence")
+    var cost_after: float = player.coherence
+    var cooling: Dictionary = player.attempt_tunneling()
+    check(not cooling["attempted"] and cooling["cost"] == 0.0,
+            "Cooldown rejects repeated attempt without charge")
+    check(absf(player.coherence - cost_after) < 0.0001,
+            "Cooldown never charges Coherence")
     if result["success"]:
         check(player.global_position.x > barrier.global_position.x,
                 "Successful tunneling moves across the barrier")
@@ -72,6 +84,21 @@ func run_tests() -> void:
     else:
         check(player.global_position.x < barrier.global_position.x,
                 "Reflected attempt leaves player on entrance side")
+    # Checkpoint/respawn handlers: direct invocation tests the deterministic rule,
+    # while the scene above verifies both real Area2D triggers are present.
+    level._on_checkpoint(player)
+    check(level.checkpoint_activated, "Checkpoint can be activated")
+    check(level.respawn_position == Vector2(1160, 595), "Checkpoint records safe respawn")
+    var before_hazard: float = player.coherence
+    level._on_hazard(player)
+    check(player.global_position == level.respawn_position, "Hazard returns player to checkpoint")
+    check(absf(player.coherence - maxf(0.0, before_hazard - 15.0)) < 0.0001,
+            "Hazard applies its documented resource penalty")
+    player.global_position = Vector2(1365, 595)
+    player.velocity = Vector2.ZERO
+    await physics_frame
+    check(barrier2.is_near_player(player), "Player can approach the second barrier")
+    check(player.get_nearby_barrier() == barrier2, "Nearest barrier selects second barrier")
     level.queue_free()
     await process_frame
     if failures.is_empty():

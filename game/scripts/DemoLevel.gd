@@ -7,7 +7,12 @@ const FLOOR_TOP := 640.0
 
 @onready var player: Variant = $Player
 @onready var barrier: Variant = $Barrier
-@onready var goal = $Goal
+@onready var barrier2: Variant = $Barrier2
+@onready var checkpoint: Area2D = $Checkpoint
+@onready var hazard: Area2D = $Hazard
+@onready var goal: Area2D = $Goal
+var respawn_position := Vector2(210, 595)
+var checkpoint_activated := false
 
 var coherence_bar: ProgressBar
 var status_text: Label
@@ -25,10 +30,13 @@ func _ready() -> void:
     _make_solid("LeftLedge", Vector2(450, 550), Vector2(160, 22))
     _make_solid("RightLedge", Vector2(1400, 535), Vector2(180, 22))
     player.barrier = barrier
+    player.additional_barriers = [barrier2]
+    checkpoint.body_entered.connect(_on_checkpoint)
+    hazard.body_entered.connect(_on_hazard)
     player.tunneling_result.connect(_on_tunneling_result)
     goal.body_entered.connect(_on_goal_reached)
     _make_hud()
-    _show_status("Reach the luminous seal beyond the barrier.", 5.0)
+    _show_status("Cross two barriers, touch the checkpoint, avoid the red instability.", 6.0)
 
 
 func _make_solid(label: String, place: Vector2, size: Vector2) -> void:
@@ -68,6 +76,13 @@ func _draw() -> void:
         draw_rect(ledge, Color("#234257"))
         draw_line(ledge.position, ledge.position + Vector2(ledge.size.x, 0),
                 Color("#8bd3d1"), 3.0)
+    draw_circle(Vector2(1160, 585), 26, Color(0.31, 0.94, 0.81, 0.22))
+    draw_arc(Vector2(1160, 585), 22, 0, TAU, 48,
+            Color("#70eecb") if checkpoint_activated else Color("#567e8b"), 3.0)
+    for i in range(5):
+        var px := 1272.0 + float(i) * 14.0
+        draw_colored_polygon(PackedVector2Array([Vector2(px, 640),
+                Vector2(px + 7.0, 593), Vector2(px + 14.0, 640)]), Color("#ee6b80"))
     draw_circle(Vector2(1770, 585), 45, Color(0.31, 0.94, 0.81, 0.13))
     draw_arc(Vector2(1770, 585), 31, 0, TAU, 50, Color("#70eecb"), 4.0)
     draw_circle(Vector2(1770, 585), 13, Color("#c4ffdc"))
@@ -144,12 +159,16 @@ func _make_hud() -> void:
 
 
 func _refresh_science() -> void:
-    var model: Dictionary = barrier.transmission()
+    _refresh_science_for(barrier)
+
+
+func _refresh_science_for(active: Variant) -> void:
+    var model: Dictionary = active.transmission()
     var percent := "invalid" if not model["valid"] else "%.1f%%" % (100.0 * model["probability"])
     science_body.text = ("TUNNELING  ·  ANALYTICAL 1D MODEL\n"
             + "H = -D d²/dx² + V(x)\n"
-            + "E = %.2f   V0 = %.2f   a = %.2f   D = %.2f\n" % [barrier.incident_energy,
-                    barrier.barrier_height, barrier.model_width, barrier.kinetic_coefficient]
+            + "E = %.2f   V0 = %.2f   a = %.2f   D = %.2f\n" % [active.incident_energy,
+                    active.barrier_height, active.model_width, active.kinetic_coefficient]
             + "Transmission T = %s\n" % percent
             + "This is stationary scattering through a rectangular\n"
             + "barrier. No QMC simulation is running.\n"
@@ -159,14 +178,15 @@ func _refresh_science() -> void:
 
 func _process(delta: float) -> void:
     coherence_bar.value = player.coherence
-    var near: bool = barrier.is_near_player(player)
+    var active: Variant = player.get_nearby_barrier()
+    var near: bool = active != null
     if player.discovered and not _discovery_announced:
         _discovery_announced = true
         science_panel.visible = true
         _show_status("NEW ABILITY: QUANTUM TUNNELING — inspect the physics on the right.", 5.0)
-    var probability: Dictionary = barrier.transmission()
+    var probability: Dictionary = active.transmission() if near else barrier.transmission()
     if win:
-        hint_text.text = "CHAMBER CLEARED  ·  PHASE 1 COMPLETE  ·  F  SCIENCE"
+        hint_text.text = "CHAMBER CLEARED  ·  PHASE G2 COMPLETE  ·  F  SCIENCE"
     elif near:
         hint_text.text = ("BARRIER DISCOVERED  ·  E  ATTEMPT  ·  T = %.1f%%"
                 % (100.0 * probability.get("probability", 0.0))) + "  ·  COST 18 COHERENCE  ·  F  INSPECT"
@@ -176,6 +196,8 @@ func _process(delta: float) -> void:
     if f_pressed and not _f_was_pressed:
         science_panel.visible = not science_panel.visible
     _f_was_pressed = f_pressed
+    if near:
+        _refresh_science_for(active)
     if _status_time > 0.0:
         _status_time -= delta
         if _status_time <= 0.0 and not win:
@@ -200,4 +222,22 @@ func _on_goal_reached(body: Node2D) -> void:
     if body != player or win:
         return
     win = true
-    _show_status("CHAMBER CLEARED — You crossed the potential barrier!", 9999.0)
+    _show_status("CHAMBER CLEARED — Two barriers crossed!", 9999.0)
+
+
+func _on_checkpoint(body: Node2D) -> void:
+    if body != player or checkpoint_activated:
+        return
+    checkpoint_activated = true
+    respawn_position = Vector2(1160, 595)
+    _show_status("CHECKPOINT ACTIVATED — safe position recorded.", 3.5)
+    queue_redraw()
+
+
+func _on_hazard(body: Node2D) -> void:
+    if body != player or win:
+        return
+    player.global_position = respawn_position
+    player.velocity = Vector2.ZERO
+    player.coherence = maxf(0.0, player.coherence - 15.0)
+    _show_status("QUANTUM INSTABILITY — returned to checkpoint (-15 Coherence).", 4.0)
