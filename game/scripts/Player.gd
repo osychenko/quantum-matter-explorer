@@ -23,7 +23,7 @@ var additional_barriers: Array[StaticBody2D] = []
 var coyote_remaining := 0.0
 var jump_buffer_remaining := 0.0
 var tunnel_cooldown_remaining := 0.0
-var discovered := false
+var tunneling_unlocked := false
 var rng := RandomNumberGenerator.new()
 var rng_initial_seed: int = 0
 var attempts := 0
@@ -71,8 +71,6 @@ func _physics_process(delta: float) -> void:
     if Input.is_action_just_released("ui_accept") and velocity.y < 0.0:
         velocity.y *= JUMP_CUT_MULTIPLIER
     move_and_slide()
-    if _nearby_barrier() != null:
-        discovered = true
     var e_pressed := Input.is_physical_key_pressed(KEY_E)
     if e_pressed and not _e_was_pressed:
         attempt_tunneling()
@@ -100,11 +98,16 @@ func get_nearby_barrier() -> Variant:
 
 func attempt_tunneling() -> Dictionary:
     var active: Variant = _nearby_barrier()
-    if not discovered or active == null:
-        var not_found := {"attempted": false, "success": false, "cost": 0.0,
-                "reason": "Discover a barrier before using tunneling."}
-        tunneling_result.emit(not_found)
-        return not_found
+    if not tunneling_unlocked:
+        var locked := {"attempted": false, "success": false, "cost": 0.0,
+                "reason": "Tunneling locked: collect the glowing quantum core first."}
+        tunneling_result.emit(locked)
+        return locked
+    if active == null:
+        var too_far := {"attempted": false, "success": false, "cost": 0.0,
+                "reason": "Approach a quantum barrier to attempt tunneling."}
+        tunneling_result.emit(too_far)
+        return too_far
     if tunnel_cooldown_remaining > 0.0:
         var cooling := {"attempted": false, "success": false, "cost": 0.0,
                 "reason": "Tunneling is recharging."}

@@ -4,6 +4,12 @@ extends Node2D
 
 const WORLD_WIDTH := 2000.0
 const FLOOR_TOP := 640.0
+const START_POSITION := Vector2(210, 595)
+const CHECKPOINT_POSITION := Vector2(1160, 595)
+const PROGRESSION = preload("res://scripts/ProgressionState.gd")
+
+@export var persistence_enabled := true
+var progression = PROGRESSION.new()
 
 @onready var player: Variant = $Player
 @onready var barrier: Variant = $Barrier
@@ -11,7 +17,8 @@ const FLOOR_TOP := 640.0
 @onready var checkpoint: Area2D = $Checkpoint
 @onready var hazard: Area2D = $Hazard
 @onready var goal: Area2D = $Goal
-var respawn_position := Vector2(210, 595)
+@onready var ability_relic: Area2D = $AbilityRelic
+var respawn_position := START_POSITION
 var checkpoint_activated := false
 
 var coherence_bar: ProgressBar
@@ -19,10 +26,13 @@ var status_text: Label
 var hint_text: Label
 var science_panel: PanelContainer
 var science_body: Label
+var inventory_panel: PanelContainer
+var inventory_body: Label
 var win := false
 var _f_was_pressed := false
+var _i_was_pressed := false
+var _n_was_pressed := false
 var _status_time := 0.0
-var _discovery_announced := false
 
 
 func _ready() -> void:
@@ -34,12 +44,19 @@ func _ready() -> void:
     _make_solid("RightLedge", Vector2(1400, 535), Vector2(180, 22))
     player.barrier = barrier
     player.additional_barriers.append(barrier2)
+    ability_relic.body_entered.connect(_on_relic_collected)
     checkpoint.body_entered.connect(_on_checkpoint)
     hazard.body_entered.connect(_on_hazard)
     player.tunneling_result.connect(_on_tunneling_result)
     goal.body_entered.connect(_on_goal_reached)
     _make_hud()
-    _show_status("Cross two barriers, touch the checkpoint, avoid the red instability.", 6.0)
+    if persistence_enabled:
+        progression.load_from_path()
+    _restore_progression()
+    if player.tunneling_unlocked:
+        _show_status("Progress restored. I: inventory | E: tunnel | F: physics.", 5.0)
+    else:
+        _show_status("Find the glowing quantum core to unlock tunneling. I: inventory.", 6.0)
 
 
 func _make_solid(label: String, place: Vector2, size: Vector2) -> void:
@@ -79,6 +96,14 @@ func _draw() -> void:
         draw_rect(ledge, Color("#234257"))
         draw_line(ledge.position, ledge.position + Vector2(ledge.size.x, 0),
                 Color("#8bd3d1"), 3.0)
+    if not player.tunneling_unlocked:
+        # A visible collectible, paired with the AbilityRelic Area2D trigger.
+        draw_circle(Vector2(640, 595), 38, Color(0.48, 0.77, 1.0, 0.16))
+        draw_arc(Vector2(640, 595), 30, 0, TAU, 48, Color("#7fe2fc"), 3.0)
+        draw_colored_polygon(PackedVector2Array([
+                Vector2(640, 573), Vector2(657, 595),
+                Vector2(640, 617), Vector2(623, 595)]), Color("#87d8ff"))
+        draw_circle(Vector2(640, 595), 7, Color("#e4fff8"))
     draw_circle(Vector2(1160, 585), 26, Color(0.31, 0.94, 0.81, 0.22))
     draw_arc(Vector2(1160, 585), 22, 0, TAU, 48,
             Color("#70eecb") if checkpoint_activated else Color("#567e8b"), 3.0)
@@ -135,7 +160,7 @@ func _make_hud() -> void:
     root.add_child(coherence_bar)
     status_text = _make_label(root, "", Vector2(24, 130), Vector2(720, 28),
             17, Color("#e6e2bc"))
-    hint_text = _make_label(root, "A/D or ←/→  MOVE    ·    SPACE  JUMP    ·    E  TUNNEL    ·    F  SCIENCE",
+    hint_text = _make_label(root, "A/D MOVE   ·   SPACE JUMP   ·   E TUNNEL   ·   F SCIENCE   ·   I INVENTORY",
             Vector2(24, 675), Vector2(1210, 30), 16, Color("#bbdce0"))
     var panel := PanelContainer.new()
     panel.name = "SciencePanel"
@@ -159,6 +184,29 @@ func _make_hud() -> void:
     science_panel = panel
     science_panel.visible = false
     _refresh_science()
+
+    var inventory := PanelContainer.new()
+    inventory.name = "AbilityInventory"
+    inventory.position = Vector2(24, 182)
+    inventory.custom_minimum_size = Vector2(610, 350)
+    inventory.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    var inventory_style := StyleBoxFlat.new()
+    inventory_style.bg_color = Color(0.07, 0.14, 0.23, 0.97)
+    inventory_style.border_color = Color("#8d9ee8")
+    inventory_style.set_border_width_all(2)
+    inventory_style.set_corner_radius_all(8)
+    inventory_style.set_content_margin_all(17)
+    inventory.add_theme_stylebox_override("panel", inventory_style)
+    inventory_body = Label.new()
+    inventory_body.custom_minimum_size = Vector2(570, 315)
+    inventory_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    inventory_body.add_theme_font_size_override("font_size", 17)
+    inventory_body.add_theme_color_override("font_color", Color("#dcebf7"))
+    inventory.add_child(inventory_body)
+    root.add_child(inventory)
+    inventory_panel = inventory
+    inventory_panel.visible = false
+    _refresh_inventory()
 
 
 func _refresh_science() -> void:
@@ -185,26 +233,37 @@ func _process(delta: float) -> void:
         player.global_position = respawn_position
         player.velocity = Vector2.ZERO
         _show_status("Fell outside the world — returned to checkpoint.")
-    coherence_bar.value = player.coherence    
     coherence_bar.value = player.coherence
     var active: Variant = player.get_nearby_barrier()
     var near: bool = active != null
-    if player.discovered and not _discovery_announced:
-        _discovery_announced = true
-        science_panel.visible = true
-        _show_status("NEW ABILITY: QUANTUM TUNNELING — inspect the physics on the right.", 5.0)
     var probability: Dictionary = active.transmission() if near else barrier.transmission()
     if win:
-        hint_text.text = "CHAMBER CLEARED  ·  PHASE G2 COMPLETE  ·  F  SCIENCE"
+        hint_text.text = "CHAMBER CLEARED  ·  PHASE G3 COMPLETE  ·  I INVENTORY"
+    elif not player.tunneling_unlocked:
+        hint_text.text = "TUNNELING LOCKED  ·  FIND THE GLOWING CORE  ·  I INVENTORY"
     elif near:
-        hint_text.text = ("BARRIER DISCOVERED  ·  E  ATTEMPT  ·  T = %.1f%%"
-                % (100.0 * probability.get("probability", 0.0))) + "  ·  COST 18 COHERENCE  ·  F  INSPECT"
+        hint_text.text = ("E TUNNEL  ·  T = %.1f%%" % (100.0 * probability.get("probability", 0.0))) \
+                + "  ·  COST 18 COHERENCE  ·  F SCIENCE  ·  I INVENTORY"
     else:
-        hint_text.text = "A/D or ←/→ MOVE  ·  SPACE JUMP  ·  E TUNNEL  ·  F SCIENCE"
+        hint_text.text = "A/D MOVE  ·  SPACE JUMP  ·  E TUNNEL  ·  F SCIENCE  ·  I INVENTORY"
     var f_pressed := Input.is_physical_key_pressed(KEY_F)
     if f_pressed and not _f_was_pressed:
         science_panel.visible = not science_panel.visible
+        if science_panel.visible:
+            inventory_panel.visible = false
     _f_was_pressed = f_pressed
+    var i_pressed := Input.is_physical_key_pressed(KEY_I)
+    if i_pressed and not _i_was_pressed:
+        inventory_panel.visible = not inventory_panel.visible
+        if inventory_panel.visible:
+            science_panel.visible = false
+            _refresh_inventory()
+    _i_was_pressed = i_pressed
+    var n_pressed := Input.is_physical_key_pressed(KEY_N)
+    if n_pressed and not _n_was_pressed and inventory_panel.visible \
+            and Input.is_key_pressed(KEY_SHIFT):
+        _reset_progression()
+    _n_was_pressed = n_pressed
     if near:
         _refresh_science_for(active)
     if _status_time > 0.0:
@@ -216,6 +275,71 @@ func _process(delta: float) -> void:
 func _show_status(message: String, duration: float = 3.5) -> void:
     status_text.text = message
     _status_time = duration
+
+
+func _refresh_inventory() -> void:
+    var tunneling_status := "UNLOCKED" if player.tunneling_unlocked else "LOCKED"
+    var checkpoint_status := "ACTIVE" if checkpoint_activated else "NOT REACHED"
+    var cleared_status := "YES" if progression.chamber_cleared else "NO"
+    inventory_body.text = ("QUANTUM ABILITIES  /  DISCOVERY JOURNAL\n\n"
+            + "1. QUANTUM TUNNELING  [%s]\n" % tunneling_status
+            + "   Cross a barrier using analytical 1D transmission.\n"
+            + "   Unlock by collecting the blue quantum core.  [E]\n\n"
+            + "2. QMC ECHOES  [COMING LATER]\n"
+            + "   Proposed gameplay echoes; not physical clones or QMC output.\n\n"
+            + "3. IMAGINARY-TIME REALM  [COMING LATER]\n"
+            + "   A future mechanic; imaginary time is mathematical, not travel.\n\n"
+            + "Checkpoint: %s    Chamber cleared: %s\n" % [checkpoint_status, cleared_status]
+            + "[I] close    [SHIFT+N] reset local progress")
+
+
+func _restore_progression() -> void:
+    player.tunneling_unlocked = progression.is_unlocked(PROGRESSION.TUNNELING)
+    checkpoint_activated = progression.checkpoint_reached
+    respawn_position = CHECKPOINT_POSITION if checkpoint_activated else START_POSITION
+    player.global_position = respawn_position
+    player.velocity = Vector2.ZERO
+    ability_relic.monitoring = not player.tunneling_unlocked
+    _refresh_inventory()
+    queue_redraw()
+
+
+func _save_progression() -> void:
+    if persistence_enabled and not progression.save_to_path():
+        push_warning("Progress could not be saved. Check write access to user://.")
+
+
+func _on_relic_collected(body: Node2D) -> void:
+    if body != player or player.tunneling_unlocked:
+        return
+    if not progression.unlock(PROGRESSION.TUNNELING):
+        return
+    player.tunneling_unlocked = true
+    ability_relic.set_deferred("monitoring", false)
+    _save_progression()
+    _refresh_inventory()
+    science_panel.visible = true
+    inventory_panel.visible = false
+    _show_status("QUANTUM TUNNELING UNLOCKED! E near barriers; F explains the physics.", 6.0)
+    queue_redraw()
+
+
+func _reset_progression() -> void:
+    progression.reset()
+    player.tunneling_unlocked = false
+    player.coherence = player.MAX_COHERENCE
+    player.tunnel_cooldown_remaining = 0.0
+    player.velocity = Vector2.ZERO
+    player.global_position = START_POSITION
+    respawn_position = START_POSITION
+    checkpoint_activated = false
+    win = false
+    ability_relic.set_deferred("monitoring", true)
+    science_panel.visible = false
+    _save_progression()
+    _refresh_inventory()
+    _show_status("Progress reset. Collect the quantum core to unlock tunneling.", 5.0)
+    queue_redraw()
 
 
 func _on_tunneling_result(result: Dictionary) -> void:
@@ -231,6 +355,9 @@ func _on_goal_reached(body: Node2D) -> void:
     if body != player or win:
         return
     win = true
+    progression.chamber_cleared = true
+    _save_progression()
+    _refresh_inventory()
     _show_status("CHAMBER CLEARED — Two barriers crossed!", 9999.0)
 
 
@@ -238,7 +365,10 @@ func _on_checkpoint(body: Node2D) -> void:
     if body != player or checkpoint_activated:
         return
     checkpoint_activated = true
-    respawn_position = Vector2(1160, 595)
+    respawn_position = CHECKPOINT_POSITION
+    progression.checkpoint_reached = true
+    _save_progression()
+    _refresh_inventory()
     _show_status("CHECKPOINT ACTIVATED — safe position recorded.", 3.5)
     queue_redraw()
 

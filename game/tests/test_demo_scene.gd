@@ -21,6 +21,7 @@ func run_tests() -> void:
         quit(1)
         return
     var level := packed.instantiate()
+    level.persistence_enabled = false  # Never read or modify a real player save in tests.
     root.add_child(level)
     await physics_frame
     await physics_frame
@@ -37,10 +38,27 @@ func run_tests() -> void:
     check(level.get_node("Checkpoint") is Area2D, "Checkpoint trigger exists")
     check(level.get_node("Hazard") is Area2D, "Hazard trigger exists")
     check(level.get_node_or_null("HUD") != null, "A HUD is mounted")
+    check(level.get_node_or_null("LeftBoundary") is StaticBody2D,
+            "Left wall prevents leaving the viewport")
+    check(level.get_node_or_null("RightBoundary") is StaticBody2D,
+            "Right wall prevents leaving the viewport")
+    check(level.get_node("AbilityRelic") is Area2D, "Unlock pickup uses a real physics trigger")
+    check(level.inventory_panel != null and not level.inventory_panel.visible,
+            "Ability inventory is created and initially hidden")
+    check(not player.tunneling_unlocked, "Fresh game starts with tunneling locked")
     player.global_position = Vector2(830, 606)
     player.velocity = Vector2.ZERO
-    player.discovered = true
     await physics_frame
+    check(not player.tunneling_unlocked, "Approaching a barrier does not auto-unlock tunneling")
+    var locked_coherence: float = player.coherence
+    var locked_result: Dictionary = player.attempt_tunneling()
+    check(not locked_result["attempted"] and locked_result["cost"] == 0.0,
+            "Tunneling cannot be attempted before collecting the core")
+    check(absf(player.coherence - locked_coherence) < 0.0001,
+            "Locked tunneling does not spend Coherence")
+    level._on_relic_collected(player)
+    check(player.tunneling_unlocked, "Collecting the core unlocks tunneling")
+    check(level.progression.is_unlocked("tunneling"), "Unlock is recorded in progression")
     check(barrier.is_near_player(player), "Player can discover the barrier from outside")
     var destination: Vector2 = barrier.exit_position(player)
     check(destination.x > barrier.global_position.x + barrier.WIDTH_PIXELS / 2.0,
@@ -99,6 +117,11 @@ func run_tests() -> void:
     await physics_frame
     check(barrier2.is_near_player(player), "Player can approach the second barrier")
     check(player.get_nearby_barrier() == barrier2, "Nearest barrier selects second barrier")
+    level._reset_progression()
+    check(not player.tunneling_unlocked and not level.checkpoint_activated,
+            "Reset locks ability and clears checkpoint")
+    check(player.global_position == Vector2(210, 595), "Reset returns to start")
+    check(not level.progression.is_unlocked("tunneling"), "Reset clears progression state")
     level.queue_free()
     await process_frame
     if failures.is_empty():
