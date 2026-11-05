@@ -1,0 +1,53 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/DemoLevel.gd" id="1_level"]
+[ext_resource type="Script" path="res://scripts/Player.gd" id="2_player"]
+[ext_resource type="Script" path="res://scripts/TunnelBarrier.gd" id="3_barrier"]
+
+[sub_resource type="RectangleShape2D" id="Rect_player"]
+size = Vector2(26, 44)
+
+[sub_resource type="RectangleShape2D" id="Rect_barrier"]
+size = Vector2(72, 640)
+
+[sub_resource type="CircleShape2D" id="Circle_goal"]
+radius = 44.0
+
+[node name="DemoLevel" type="Node2D"]
+script = ExtResource("1_level")
+
+[node name="Player" type="CharacterBody2D" parent="."]
+position = Vector2(210, 595)
+collision_layer = 4
+collision_mask = 3
+script = ExtResource("2_player")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player"]
+shape = SubResource("Rect_player")
+
+[node name="Camera2D" type="Camera2D" parent="Player"]
+enabled = true
+position_smoothing_enabled = true
+position_smoothing_speed = 5.0
+limit_left = 0
+limit_top = 0
+limit_right = 2000
+limit_bottom = 720
+
+[node name="Barrier" type="StaticBody2D" parent="."]
+position = Vector2(945, 320)
+collision_layer = 2
+collision_mask = 0
+script = ExtResource("3_barrier")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Barrier"]
+shape = SubResource("Rect_barrier")
+
+[node name="Goal" type="Area2D" parent="."]
+position = Vector2(1770, 585)
+collision_layer = 0
+collision_mask = 4
+monitoring = true
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Goal"]
+shape = SubResource("Circle_goal")

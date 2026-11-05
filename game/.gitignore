@@ -1,0 +1,5 @@
+# Godot's local import/cache directory (generated on first editor run).
+.godot/
+# Local exports and debug recordings; keep source scenes/scripts versioned.
+builds/
+*.log
