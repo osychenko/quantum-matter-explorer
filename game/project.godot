@@ -2,9 +2,9 @@
 config_version=5
 
 [application]
-config/name="Quantum Matter Explorer: Barrier Ruins"
-run/main_scene="res://scenes/DemoLevel.tscn"
-config/description="A physics-aware 2D tunneling prototype; gameplay is not a QMC measurement."
+config/name="Quantum Matter Explorer"
+run/main_scene="res://scenes/GameMenu.tscn"
+config/description="Quantum-inspired platforming and measurement puzzles; the toy mechanics are not research QMC."
 
 [display]
 window/size/viewport_width=1280

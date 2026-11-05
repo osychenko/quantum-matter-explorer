@@ -8,6 +8,9 @@ const START_POSITION := Vector2(210, 595)
 const CHECKPOINT_POSITION := Vector2(1160, 595)
 const REALM_CHECKPOINT_POSITION := Vector2(2090, 595)
 const PROGRESSION = preload("res://scripts/ProgressionState.gd")
+const FLOW = preload("res://scripts/GameFlow.gd")
+const FX = preload("res://scripts/AbilityVFX.gd")
+const STRIP = preload("res://scripts/AbilityStrip.gd")
 const ECHO_GHOST = preload("res://scripts/EchoGhost.gd")
 const MEASUREMENT_LAB = preload("res://scripts/MeasurementLab.gd")
 const GATE_OPEN_SECONDS := 4.0
@@ -49,6 +52,9 @@ var science_body: Label
 var inventory_panel: PanelContainer
 var inventory_body: Label
 var measurement_lab: Variant = null
+var ability_fx: Variant = null
+var ability_strip: Variant = null
+var _h_was_pressed := false
 var win := false
 var _f_was_pressed := false
 var _i_was_pressed := false
@@ -77,6 +83,12 @@ func _ready() -> void:
     player.tunneling_result.connect(_on_tunneling_result)
     goal.body_entered.connect(_on_goal_reached)
     _make_hud()
+    ability_fx = FX.new()
+    ability_fx.name = "AbilityVFX"
+    add_child(ability_fx)
+    player.tunneling_result.connect(_on_fx_tunneling)
+    player.echo_result.connect(_on_fx_echo)
+    player.realm_result.connect(_on_fx_realm)
     if persistence_enabled:
         progression.load_from_path()
     _restore_progression()
@@ -240,6 +252,27 @@ func _make_hud() -> void:
     measurement_lab.visible = false
     measurement_lab.close_requested.connect(_close_measurement_lab)
 
+    ability_strip = STRIP.new()
+    ability_strip.name = "AbilityStrip"
+    ability_strip.position = Vector2(665, 615)
+    ability_strip.player = player
+    root.add_child(ability_strip)
+
+
+func _on_fx_tunneling(result: Dictionary) -> void:
+    if result.get("attempted", false):
+        ability_fx.play_event("tunnel", player.global_position, result.get("success", false))
+
+
+func _on_fx_echo(result: Dictionary) -> void:
+    if result.get("spawned", false):
+        ability_fx.play_event("echo", player.global_position)
+
+
+func _on_fx_realm(result: Dictionary) -> void:
+    if result.get("activated", false):
+        ability_fx.play_event("realm", player.global_position)
+
 
 func _open_measurement_lab() -> bool:
     if measurement_lab.visible:
@@ -311,11 +344,17 @@ func _process(delta: float) -> void:
         else:
             _open_measurement_lab()
     _m_was_pressed = m_pressed
+    ability_strip.visible = not measurement_lab.visible
     if measurement_lab.visible:
         if Input.is_action_just_pressed("ui_cancel"):
             _close_measurement_lab()
         # Keep the world stable while adjusting the laboratory's UI controls.
         return
+    var h_pressed := Input.is_physical_key_pressed(KEY_H)
+    if h_pressed and not _h_was_pressed:
+        FLOW.navigate(get_tree(), FLOW.MENU)
+        return
+    _h_was_pressed = h_pressed
     # Recover from falling outside the playable area.
     if player.global_position.y > 900.0:
         player.global_position = respawn_position
@@ -326,7 +365,7 @@ func _process(delta: float) -> void:
     var near: bool = active != null
     var probability: Dictionary = active.transmission() if near else barrier.transmission()
     if progression.chamber_cleared:
-        hint_text.text = "CHAMBER CLEARED  ·  PRESS P FOR G7 CALIBRATION CHAMBER  ·  I INVENTORY"
+        hint_text.text = "CHAMBER CLEARED  ·  P CALIBRATION CHAMBER  ·  H MAIN MENU"
     elif not player.tunneling_unlocked:
         hint_text.text = "TUNNELING LOCKED · FIND BLUE CORE · M LAB NEAR BARRIER · I INVENTORY"
     elif near:
@@ -340,7 +379,7 @@ func _process(delta: float) -> void:
         hint_text.text = "A/D MOVE · SPACE JUMP · E TUNNEL · Q ECHO · R REALM · M LAB · I INVENTORY"
     var p_pressed := Input.is_physical_key_pressed(KEY_P)
     if p_pressed and not _p_was_pressed and progression.chamber_cleared:
-        get_tree().change_scene_to_file("res://scenes/CalibrationChamber.tscn")
+        FLOW.navigate(get_tree(), FLOW.CALIBRATION)
         return
     _p_was_pressed = p_pressed
     var f_pressed := Input.is_physical_key_pressed(KEY_F)
@@ -438,6 +477,7 @@ func _on_relic_collected(body: Node2D) -> void:
     if not progression.unlock(PROGRESSION.TUNNELING):
         return
     player.tunneling_unlocked = true
+    ability_fx.play_event("tunnel", ability_relic.global_position)
     ability_relic.set_deferred("monitoring", false)
     ability_relic.visible = false
     _save_progression()
@@ -454,6 +494,7 @@ func _on_echo_relic_collected(body: Node2D) -> void:
     if not progression.unlock(PROGRESSION.ECHOES):
         return
     player.echoes_unlocked = true
+    ability_fx.play_event("echo", echo_relic.global_position)
     echo_relic.set_deferred("monitoring", false)
     echo_relic.visible = false
     _save_progression()
@@ -469,6 +510,7 @@ func _on_imaginary_relic_collected(body: Node2D) -> void:
     if not progression.unlock(PROGRESSION.IMAGINARY_TIME):
         return
     player.imaginary_time_unlocked = true
+    ability_fx.play_event("realm", imaginary_relic.global_position)
     imaginary_relic.set_deferred("monitoring", false)
     imaginary_relic.visible = false
     _save_progression()
@@ -495,6 +537,7 @@ func _on_realm_checkpoint(body: Node2D) -> void:
     progression.realm_checkpoint_reached = true
     respawn_position = realm_checkpoint.global_position + Vector2(0, 10)
     realm_checkpoint.set_marker_active(true)
+    ability_fx.play_event("checkpoint", realm_checkpoint.global_position)
     _save_progression()
     _refresh_inventory()
     _show_status("REALM CHECKPOINT — respawn now starts beyond the Echo gate.", 5.0)
@@ -588,7 +631,8 @@ func _on_goal_reached(body: Node2D) -> void:
     progression.realm_gate_cleared = true
     _save_progression()
     _refresh_inventory()
-    _show_status("CHAMBER CLEARED — Press P for the G7 Calibration Chamber.", 9999.0)
+    ability_fx.play_event("finish", goal.global_position)
+    _show_status("CHAMBER CLEARED — Press P for the Calibration Chamber.", 9999.0)
 
 
 func _on_checkpoint(body: Node2D) -> void:
@@ -600,6 +644,7 @@ func _on_checkpoint(body: Node2D) -> void:
     checkpoint.set_marker_active(true)
     _save_progression()
     _refresh_inventory()
+    ability_fx.play_event("checkpoint", checkpoint.global_position)
     _show_status("CHECKPOINT ACTIVATED — safe position recorded.", 3.5)
     queue_redraw()
 
@@ -610,4 +655,5 @@ func _on_hazard(body: Node2D) -> void:
     player.global_position = respawn_position
     player.velocity = Vector2.ZERO
     player.coherence = maxf(0.0, player.coherence - 15.0)
+    ability_fx.play_event("hazard", player.global_position)
     _show_status("QUANTUM INSTABILITY — returned to checkpoint (-15 Coherence).", 4.0)

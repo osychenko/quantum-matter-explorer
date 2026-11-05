@@ -70,6 +70,16 @@ func _draw() -> void:
         else:
             draw_line(bounds.position, bounds.position + Vector2(dimensions.x, 0.0),
                     edge_color, 3.0)
+            # Local-coordinate engraved details follow editor drag/resize.
+            draw_rect(Rect2(bounds.position + Vector2(0, 5),
+                    Vector2(dimensions.x, 3)),
+                    Color(edge_color.r, edge_color.g, edge_color.b, 0.18))
+            var divisions := mini(32, maxi(1, int(dimensions.x / 55.0)))
+            for i in range(1, divisions):
+                var x := bounds.position.x + float(i) / float(divisions) * dimensions.x
+                draw_line(Vector2(x, bounds.position.y + 11),
+                        Vector2(x, bounds.end.y - 5),
+                        Color(edge_color.r, edge_color.g, edge_color.b, 0.12), 1.0)
     else:
         draw_rect(bounds, Color(fill_color.r, fill_color.g, fill_color.b, 0.12))
         draw_rect(bounds, Color(edge_color.r, edge_color.g, edge_color.b, 0.48), false, 2.0)

@@ -3,6 +3,9 @@ extends Node2D
 ## This is Bernoulli sampling of analytical tunneling T, not quantum Monte Carlo.
 
 const PROGRESSION = preload("res://scripts/ProgressionState.gd")
+const FLOW = preload("res://scripts/GameFlow.gd")
+const FX = preload("res://scripts/AbilityVFX.gd")
+const STRIP = preload("res://scripts/AbilityStrip.gd")
 const LAB = preload("res://scripts/MeasurementLab.gd")
 const WORLD_WIDTH := 1640.0
 const START_POSITION := Vector2(160, 595)
@@ -23,6 +26,9 @@ var progression = PROGRESSION.new()
 @onready var goal: Area2D = $Goal
 
 var lab: Variant = null
+var ability_fx: Variant = null
+var ability_strip: Variant = null
+var _h_pressed_last := false
 var status_label: Label
 var hints_label: Label
 var objective_label: Label
@@ -52,6 +58,9 @@ func _ready() -> void:
     hazard.body_entered.connect(_on_hazard)
     goal.body_entered.connect(_on_goal)
     _make_hud()
+    ability_fx = FX.new()
+    ability_fx.name = "AbilityVFX"
+    add_child(ability_fx)
     _set_gate_open(progression.calibration_gate_cleared)
     _refresh_lab_challenge()
     room_completed = progression.calibration_chamber_cleared
@@ -98,7 +107,7 @@ func _make_hud() -> void:
     overlay.add_child(status_label)
     hints_label = Label.new()
     hints_label.position = Vector2(22, 674)
-    hints_label.text = "A/D MOVE · SPACE JUMP · M LAB AT CONSOLE · B BACK TO BARRIER RUINS"
+    hints_label.text = "A/D MOVE · SPACE JUMP · M LAB · B BARRIER RUINS · H MENU"
     hints_label.add_theme_color_override("font_color", Color("#bee8ed"))
     overlay.add_child(hints_label)
     lab = LAB.new()
@@ -108,6 +117,11 @@ func _make_hud() -> void:
     lab.settings_changed.connect(_on_lab_settings_changed)
     lab.batch_completed.connect(_on_batch_completed)
     _refresh_lab_challenge()
+    ability_strip = STRIP.new()
+    ability_strip.name = "AbilityStrip"
+    ability_strip.position = Vector2(665, 615)
+    ability_strip.player = player
+    overlay.add_child(ability_strip)
 
 
 func _process(_delta: float) -> void:
@@ -120,13 +134,19 @@ func _process(_delta: float) -> void:
         else:
             _open_lab()
     _m_pressed = m_pressed
+    ability_strip.visible = not lab.visible
     if lab.visible:
         if Input.is_action_just_pressed("ui_cancel"):
             _close_lab()
         return
+    var h_pressed := Input.is_physical_key_pressed(KEY_H)
+    if h_pressed and not _h_pressed_last:
+        FLOW.navigate(get_tree(), FLOW.MENU)
+        return
+    _h_pressed_last = h_pressed
     var b_pressed := Input.is_physical_key_pressed(KEY_B)
     if b_pressed and not _b_pressed:
-        get_tree().change_scene_to_file("res://scenes/DemoLevel.tscn")
+        FLOW.navigate(get_tree(), FLOW.RUINS)
         return
     _b_pressed = b_pressed
 
@@ -185,6 +205,7 @@ func _on_batch_completed(result: Dictionary) -> void:
         if is_equal_approx(energy, small_energy) and is_equal_approx(width, small_width) \
                 and error <= MAX_STANDARD_ERROR and error < small_standard_error:
             _set_gate_open(true)
+            ability_fx.play_event("calibration", gate.global_position)
             progression.calibration_gate_cleared = true
             _save_progression()
             _show_status("CALIBRATED! More trials reduced the expected sampling error; gate unlocked.")
@@ -241,6 +262,7 @@ func _on_checkpoint(body: Node2D) -> void:
     checkpoint_active = true
     respawn_position = checkpoint.global_position + Vector2(0, 10)
     checkpoint.set_marker_active(true)
+    ability_fx.play_event("checkpoint", checkpoint.global_position)
     _show_status("CHECKPOINT ACTIVATED — the hazard won't send you back to the lab.")
 
 
@@ -255,6 +277,7 @@ func _on_hazard(body: Node2D) -> void:
     if body != player or room_completed:
         return
     _respawn("Instability field! Returned to checkpoint; Coherence restored.")
+    ability_fx.play_event("hazard", player.global_position)
 
 
 func _on_goal(body: Node2D) -> void:
@@ -264,6 +287,7 @@ func _on_goal(body: Node2D) -> void:
     progression.calibration_chamber_cleared = true
     _save_progression()
     _refresh_objective()
+    ability_fx.play_event("finish", goal.global_position)
     _show_status("G7 COMPLETE — measurement statistics now drive puzzle progression!")
 
 

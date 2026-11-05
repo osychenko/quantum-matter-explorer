@@ -46,6 +46,9 @@ var rng := RandomNumberGenerator.new()
 var rng_initial_seed: int = 0
 var attempts := 0
 var glow_time := 0.0
+var _stride_phase := 0.0
+var _land_squash := 0.0
+var _grounded_last_frame := false
 var facing := 1.0
 var _e_was_pressed := false
 var _space_was_pressed := false
@@ -94,6 +97,13 @@ func _physics_process(delta: float) -> void:
     if Input.is_action_just_released("ui_accept") and velocity.y < 0.0:
         velocity.y *= JUMP_CUT_MULTIPLIER
     move_and_slide()
+    # Animation is purely visual; the CharacterBody2D and collider never scale.
+    var grounded_now := is_on_floor()
+    if grounded_now and not _grounded_last_frame:
+        _land_squash = 1.0
+    _grounded_last_frame = grounded_now
+    _land_squash = maxf(0.0, _land_squash - 4.0 * delta)
+    _stride_phase += absf(velocity.x) / WALK_SPEED * 13.0 * delta
     echo_history.append(global_position)
     if echo_history.size() > ECHO_RECORD_FRAMES:
         echo_history.pop_front()
@@ -219,6 +229,14 @@ func attempt_imaginary_time() -> Dictionary:
 
 
 func _draw() -> void:
+    var running := is_on_floor() and absf(velocity.x) > 45.0
+    var stride := sin(_stride_phase) if running else 0.0
+    var bob := absf(stride) * 2.0 if running else 0.0
+    var stretch := 0.08 if not is_on_floor() and velocity.y < 0.0 else 0.0
+    var squat := _land_squash * 0.13
+
+    # Shadow is outside the animated body transform.
+    draw_circle(Vector2(0, 23), 17.0, Color(0.02, 0.05, 0.10, 0.30))
     if glow_time > 0.0:
         for i in range(4):
             var alpha := glow_time * (0.13 + float(i) * 0.05)
@@ -227,16 +245,33 @@ func _draw() -> void:
         draw_circle(Vector2(0, -6), 31.0 + 8.0 * glow_time,
                 Color(0.25, 0.89, 1.0, glow_time * 0.4))
     if is_realm_active():
-        draw_arc(Vector2(0, -8), 33.0, 0.0, TAU, 48,
+        draw_arc(Vector2(0, -8), 35.0, 0.0, TAU, 48,
                 Color(0.42, 1.0, 0.77, 0.8), 3.0)
-    # Original simple geometric avatar; no external art assets or IP.
-    draw_line(Vector2(-9, 12), Vector2(-15, 22), Color("#94c9d4"), 5.0)
-    draw_line(Vector2(9, 12), Vector2(15, 22), Color("#94c9d4"), 5.0)
-    draw_polygon(PackedVector2Array([Vector2(-13, -5), Vector2(13, -5),
-            Vector2(11, 15), Vector2(-11, 15)]),
-            PackedColorArray([Color("#4b9cae"), Color("#4b9cae"),
-            Color("#255775"), Color("#255775")]))
-    draw_circle(Vector2(0, -12), 14.0, Color("#e1f4ea"))
-    draw_circle(Vector2(5.0 * facing, -13), 2.5, Color("#19344e"))
+    if echo_cooldown_remaining > 0.0 and echoes_unlocked:
+        draw_arc(Vector2(0, -8), 30.0, 0.0, TAU, 42,
+                Color(0.75, 0.53, 1.0, 0.25), 2.0)
+
+    # Apply squash, stretch, and running bob to artwork only.
+    draw_set_transform(Vector2(0.0, -bob), 0.0,
+            Vector2(1.0 + squat * 0.55 - stretch * 0.4,
+                    1.0 - squat + stretch))
+    var left_step := stride * 8.0
+    var right_step := -stride * 8.0
+    draw_line(Vector2(-8, 9), Vector2(-12 + left_step, 23), Color("#a2d4e0"), 5.0)
+    draw_line(Vector2(8, 9), Vector2(12 + right_step, 23), Color("#a2d4e0"), 5.0)
+    draw_line(Vector2(-10 + left_step, 23), Vector2(-2 + left_step, 23),
+            Color("#e3f8f1"), 4.0)
+    draw_line(Vector2(10 + right_step, 23), Vector2(18 + right_step, 23),
+            Color("#e3f8f1"), 4.0)
+    draw_colored_polygon(PackedVector2Array([Vector2(-13, -5), Vector2(13, -5),
+            Vector2(11, 15), Vector2(-11, 15)]), Color("#398caa"))
+    draw_line(Vector2(-13, -4), Vector2(-13 - 3.5 * stride, 11),
+            Color("#b2e4de"), 3.5)
+    draw_line(Vector2(13, -4), Vector2(13 + 3.5 * stride, 11),
+            Color("#b2e4de"), 3.5)
+    draw_circle(Vector2(0, -12), 14.0, Color("#e5fff6"))
+    draw_arc(Vector2(0, -12), 14.0, PI, TAU, 32, Color("#83cfdc"), 2.0)
+    draw_circle(Vector2(5.0 * facing, -13), 2.6, Color("#183c55"))
     draw_line(Vector2(-11, -20), Vector2(-7, -28), Color("#bff2eb"), 3.0)
     draw_line(Vector2(11, -20), Vector2(7, -28), Color("#bff2eb"), 3.0)
+    draw_set_transform(Vector2.ZERO)
