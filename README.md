@@ -1,4 +1,3 @@
-
 # Quantum Matter Explorer
 
 An experimental, NumPy-based quantum Monte Carlo (QMC) engine intended to

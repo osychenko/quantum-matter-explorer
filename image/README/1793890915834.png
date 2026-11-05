@@ -1,0 +1,611 @@
+diff --git a/game/MEASUREMENT_LAB.md b/game/MEASUREMENT_LAB.md
+new file mode 100644
+index 0000000..36e77e1
+--- /dev/null
++++ b/game/MEASUREMENT_LAB.md
+@@ -0,0 +1,42 @@
++# G6 — Quantum Measurement Laboratory
++
++The laboratory is a teaching activity tied to the two existing rectangular
++quantum barriers. It is **not a new gameplay ability** and does not require a
++relic or change any existing save format.
++
++## Play
++
++1. Move within tunneling range of either blue barrier and press **M**.
++2. Choose sub-barrier incident energy `E` and barrier width `a` in the panel.
++   `V0` (barrier height) and `D` (kinetic coefficient) come from the chosen barrier.
++3. Run 1, 10, 100, or 1,000 independent transmission/reflection trials.
++4. Compare the theoretical probability `T` with the observed frequency.
++   The panel also displays theoretical sampling standard error `sqrt(T*(1-T)/N)`.
++5. Change `E`, `a`, or the random seed to start a fresh experimental series.
++   **Clear results** resets the counts, and **Barrier defaults** restores E/a.
++6. Press **M**, **Esc**, or the **Close** button to return to the platformer.
++
++While the panel is open, player physics controls are suspended. The experiment
++spends **no Coherence** and does not mutate barrier attributes or saved progress.
++Each batch uses the input seed plus a batch index; resetting results repeats
++exactly the same seeded sequence for identical settings.
++
++## Scientific scope
++
++`TunnelingModel.gd` evaluates an exact stationary 1D rectangular potential
++barrier for `0 < E < V0`. `MeasurementExperiment.gd` samples independent
++Bernoulli trials with the calculated probability `T`. This is an instructional
++Monte Carlo *sampling demonstration*, **not quantum Monte Carlo (QMC)**.
++It does not simulate wavepacket propagation or collapse dynamics.
++
++## Automated checks
++
++```bash
++godot --headless --path game --editor --import
++for test in test_tunneling test_demo_scene test_progression test_echoes test_realm test_measurement test_measurement_lab; do
++    godot --headless --path game --script "res://tests/${test}.gd" || exit 1
++done
++```
++
++These tests use a fresh scene with persistence disabled. They never touch the
++real user's saved progression.
+diff --git a/game/scripts/DemoLevel.gd b/game/scripts/DemoLevel.gd
+index d452671..cd705b9 100644
+--- a/game/scripts/DemoLevel.gd
++++ b/game/scripts/DemoLevel.gd
+@@ -9,6 +9,7 @@ const CHECKPOINT_POSITION := Vector2(1160, 595)
+ const REALM_CHECKPOINT_POSITION := Vector2(2090, 595)
+ const PROGRESSION = preload("res://scripts/ProgressionState.gd")
+ const ECHO_GHOST = preload("res://scripts/EchoGhost.gd")
++const MEASUREMENT_LAB = preload("res://scripts/MeasurementLab.gd")
+ const GATE_OPEN_SECONDS := 4.0
+ const ECHO_SWITCH_RANGE := 43.0
+ const REALM_GATE_SAFETY_RANGE := 48.0
+@@ -47,10 +48,12 @@ var science_panel: PanelContainer
+ var science_body: Label
+ var inventory_panel: PanelContainer
+ var inventory_body: Label
++var measurement_lab: Variant = null
+ var win := false
+ var _f_was_pressed := false
+ var _i_was_pressed := false
+ var _n_was_pressed := false
++var _m_was_pressed := false
+ var _status_time := 0.0
+ 
+ 
+@@ -228,6 +231,36 @@ func _make_hud() -> void:
+     inventory_panel.visible = false
+     _refresh_inventory()
+ 
++    # G6: a modal learning UI. It is independent of save data and physics barriers.
++    measurement_lab = MEASUREMENT_LAB.new()
++    root.add_child(measurement_lab)
++    measurement_lab.visible = false
++    measurement_lab.close_requested.connect(_close_measurement_lab)
++
++
++func _open_measurement_lab() -> bool:
++    if measurement_lab.visible:
++        return true
++    var nearby: Variant = player.get_nearby_barrier()
++    if nearby == null:
++        _show_status("Approach a blue tunneling barrier, then press M for the lab.", 4.0)
++        return false
++    var display_name := "BARRIER 1" if nearby == barrier else "BARRIER 2"
++    measurement_lab.configure_barrier(nearby, display_name)
++    science_panel.visible = false
++    inventory_panel.visible = false
++    player.velocity = Vector2.ZERO
++    player.set_physics_process(false)
++    measurement_lab.visible = true
++    return true
++
++
++func _close_measurement_lab() -> void:
++    if not measurement_lab.visible:
++        return
++    measurement_lab.visible = false
++    player.set_physics_process(true)
++
+ 
+ func _refresh_science() -> void:
+     _refresh_science_for(barrier)
+@@ -268,6 +301,18 @@ func _refresh_realm_science() -> void:
+ 
+ 
+ func _process(delta: float) -> void:
++    var m_pressed := Input.is_physical_key_pressed(KEY_M)
++    if m_pressed and not _m_was_pressed:
++        if measurement_lab.visible:
++            _close_measurement_lab()
++        else:
++            _open_measurement_lab()
++    _m_was_pressed = m_pressed
++    if measurement_lab.visible:
++        if Input.is_action_just_pressed("ui_cancel"):
++            _close_measurement_lab()
++        # Keep the world stable while adjusting the laboratory's UI controls.
++        return
+     # Recover from falling outside the playable area.
+     if player.global_position.y > 900.0:
+         player.global_position = respawn_position
+@@ -278,18 +323,18 @@ func _process(delta: float) -> void:
+     var near: bool = active != null
+     var probability: Dictionary = active.transmission() if near else barrier.transmission()
+     if win:
+-        hint_text.text = "CHAMBER CLEARED  ·  PHASE G5 COMPLETE  ·  I INVENTORY"
++        hint_text.text = "CHAMBER CLEARED  ·  M MEASUREMENT LAB NEAR BARRIERS  ·  I INVENTORY"
+     elif not player.tunneling_unlocked:
+-        hint_text.text = "TUNNELING LOCKED  ·  FIND THE GLOWING CORE  ·  I INVENTORY"
++        hint_text.text = "TUNNELING LOCKED · FIND BLUE CORE · M LAB NEAR BARRIER · I INVENTORY"
+     elif near:
+         hint_text.text = ("E TUNNEL  ·  T = %.1f%%" % (100.0 * probability.get("probability", 0.0))) \
+-                + "  ·  COST 18 COHERENCE  ·  F SCIENCE  ·  I INVENTORY"
++                + "  ·  M MEASUREMENT LAB  ·  F SCIENCE  ·  I INVENTORY"
+     elif player.imaginary_time_unlocked and player.global_position.x > 2100.0:
+         hint_text.text = "R REALM (30)  ·  CROSS GREEN GATE  ·  JUMP OVER GREEN SPIKES  ·  I INVENTORY"
+     elif player.echoes_unlocked and player.global_position.x > 1520.0:
+         hint_text.text = "WALK OVER VIOLET PAD  ·  Q REPLAY (22)  ·  CROSS THE OPEN GATE  ·  I INVENTORY"
+     elif player.tunneling_unlocked:
+-        hint_text.text = "A/D MOVE  ·  SPACE JUMP  ·  E TUNNEL  ·  Q ECHO  ·  R REALM  ·  I INVENTORY"
++        hint_text.text = "A/D MOVE · SPACE JUMP · E TUNNEL · Q ECHO · R REALM · M LAB · I INVENTORY"
+     var f_pressed := Input.is_physical_key_pressed(KEY_F)
+     if f_pressed and not _f_was_pressed:
+         science_panel.visible = not science_panel.visible
+@@ -476,6 +521,7 @@ func _on_realm_result(result: Dictionary) -> void:
+ 
+ 
+ func _reset_progression() -> void:
++    _close_measurement_lab()
+     progression.reset()
+     player.tunneling_unlocked = false
+     player.echoes_unlocked = false
+diff --git a/game/scripts/MeasurementExperiment.gd b/game/scripts/MeasurementExperiment.gd
+new file mode 100644
+index 0000000..148bcba
+--- /dev/null
++++ b/game/scripts/MeasurementExperiment.gd
+@@ -0,0 +1,40 @@
++extends RefCounted
++## Independent repeated measurements of the exact rectangular-barrier 1D model.
++## Uses Bernoulli sampling of the predicted transmission probability, NOT QMC.
++
++const MODEL = preload("res://scripts/TunnelingModel.gd")
++const MAX_TRIALS := 100000
++
++
++static func run_trials(probability: float, count: int, seed_value: int = 2026) -> Dictionary:
++    if is_nan(probability) or is_inf(probability) or probability < 0.0 or probability > 1.0:
++        return {"valid": false, "reason": "Probability must be finite and between 0 and 1."}
++    if count < 1 or count > MAX_TRIALS:
++        return {"valid": false, "reason": "Number of trials must be between 1 and 100000."}
++    var rng := RandomNumberGenerator.new()
++    rng.seed = seed_value
++    var transmitted := 0
++    for i in range(count):
++        if rng.randf() < probability:
++            transmitted += 1
++    var observed := float(transmitted) / float(count)
++    # Standard deviation of the sample proportion, under the supplied model p.
++    var standard_error := sqrt(probability * (1.0 - probability) / float(count))
++    return {"valid": true, "trials": count, "transmitted": transmitted,
++            "reflected": count - transmitted, "predicted_probability": probability,
++            "observed_frequency": observed, "standard_error": standard_error,
++            "seed": seed_value}
++
++
++static func run_barrier(energy: float, height: float, width: float, d: float,
++        count: int, seed_value: int = 2026) -> Dictionary:
++    var model: Dictionary = MODEL.evaluate(energy, height, width, d)
++    if not model.get("valid", false):
++        return {"valid": false, "reason": str(model.get("reason", "Invalid barrier."))}
++    var result: Dictionary = run_trials(float(model["probability"]), count, seed_value)
++    if result.get("valid", false):
++        result["energy"] = energy
++        result["height"] = height
++        result["width"] = width
++        result["d"] = d
++    return result
+diff --git a/game/scripts/MeasurementLab.gd b/game/scripts/MeasurementLab.gd
+new file mode 100644
+index 0000000..d256bb3
+--- /dev/null
++++ b/game/scripts/MeasurementLab.gd
+@@ -0,0 +1,251 @@
++extends PanelContainer
++## Self-contained, mouse-operable measurement lab. Does not mutate real barriers.
++## Built at runtime so no separate scene/art dependency is required.
++
++signal close_requested
++
++const EXPERIMENT = preload("res://scripts/MeasurementExperiment.gd")
++const MODEL = preload("res://scripts/TunnelingModel.gd")
++
++var barrier_name := ""
++var barrier_height := 1.2
++var kinetic_coefficient := 0.5
++var reference_energy := 0.8
++var reference_width := 0.8
++var run_number := 0
++var total_trials := 0
++var total_transmitted := 0
++var last_result: Dictionary = {}
++
++var energy_spin: SpinBox
++var width_spin: SpinBox
++var seed_spin: SpinBox
++var barrier_label: Label
++var predicted_label: Label
++var sample_label: Label
++var total_label: Label
++var transmitted_label: Label
++var reflected_label: Label
++var transmitted_bar: ProgressBar
++var reflected_bar: ProgressBar
++
++
++func _ready() -> void:
++    name = "MeasurementLab"
++    position = Vector2(265, 46)
++    custom_minimum_size = Vector2(750, 608)
++    mouse_filter = Control.MOUSE_FILTER_STOP
++    var style := StyleBoxFlat.new()
++    style.bg_color = Color(0.037, 0.076, 0.13, 0.98)
++    style.border_color = Color("#69cde5")
++    style.set_border_width_all(2)
++    style.set_corner_radius_all(10)
++    style.set_content_margin_all(18)
++    add_theme_stylebox_override("panel", style)
++
++    var vertical := VBoxContainer.new()
++    vertical.add_theme_constant_override("separation", 9)
++    add_child(vertical)
++
++    var header := HBoxContainer.new()
++    vertical.add_child(header)
++    _new_label(header, "QUANTUM MEASUREMENT LAB", 23, Color("#d8f7ff"))
++    var space := Control.new()
++    space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
++    header.add_child(space)
++    var close_button := Button.new()
++    close_button.text = "Close [M / Esc]"
++    close_button.pressed.connect(_request_close)
++    header.add_child(close_button)
++
++    _new_label(vertical,
++            "Stationary 1D scattering: each trial is transmitted or reflected.\n"
++            + "Sampling is a teaching experiment, NOT quantum Monte Carlo.",
++            15, Color("#c2dce5"))
++    barrier_label = _new_label(vertical, "", 16, Color("#f0db98"))
++
++    var controls := HBoxContainer.new()
++    controls.add_theme_constant_override("separation", 15)
++    vertical.add_child(controls)
++    energy_spin = _make_spin(controls, "Energy E", 0.05, 2.0, 0.05, 0.8)
++    width_spin = _make_spin(controls, "Width a", 0.1, 3.0, 0.05, 0.8)
++    seed_spin = _make_spin(controls, "Seed", 0.0, 999999999.0, 1.0, 2026.0)
++    energy_spin.value_changed.connect(_on_parameters_changed)
++    width_spin.value_changed.connect(_on_parameters_changed)
++    seed_spin.value_changed.connect(_on_parameters_changed)
++
++    predicted_label = _new_label(vertical, "", 16, Color("#92e9c5"))
++    var actions := HBoxContainer.new()
++    actions.add_theme_constant_override("separation", 10)
++    vertical.add_child(actions)
++    for count in [1, 10, 100, 1000]:
++        var button := Button.new()
++        button.text = "Run %d" % count
++        button.pressed.connect(_on_run_pressed.bind(count))
++        actions.add_child(button)
++    var reset_button := Button.new()
++    reset_button.text = "Clear results"
++    reset_button.pressed.connect(clear_results)
++    actions.add_child(reset_button)
++    var defaults_button := Button.new()
++    defaults_button.text = "Barrier defaults"
++    defaults_button.pressed.connect(_restore_defaults)
++    actions.add_child(defaults_button)
++
++    _new_label(vertical, "Observed outcomes (latest batch)", 16, Color("#d8f7ff"))
++    var row_t := HBoxContainer.new()
++    vertical.add_child(row_t)
++    transmitted_label = _new_label(row_t, "Transmitted", 15, Color("#87e5bd"))
++    transmitted_label.custom_minimum_size.x = 225.0
++    transmitted_bar = _make_bar(row_t, Color("#66d9ae"))
++    var row_r := HBoxContainer.new()
++    vertical.add_child(row_r)
++    reflected_label = _new_label(row_r, "Reflected", 15, Color("#f3adba"))
++    reflected_label.custom_minimum_size.x = 225.0
++    reflected_bar = _make_bar(row_r, Color("#f18ca3"))
++    sample_label = _new_label(vertical, "No trials yet.", 16, Color("#e1e9fa"))
++    total_label = _new_label(vertical, "", 16, Color("#bfd6ed"))
++    _new_label(vertical,
++            "Theoretical sampling error: SE = sqrt(T (1 - T) / N).\n"
++            + "In a finite batch, the observed fraction generally differs from T.\n"
++            + "Experiment settings affect only this lab, not gameplay physics or Coherence.",
++            14, Color("#aabdcf"))
++    _refresh_prediction()
++    _refresh_results()
++
++
++func _new_label(parent: Node, label_text: String, font_size: int, color: Color) -> Label:
++    var label := Label.new()
++    label.text = label_text
++    label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
++    label.add_theme_font_size_override("font_size", font_size)
++    label.add_theme_color_override("font_color", color)
++    parent.add_child(label)
++    return label
++
++
++func _make_spin(parent: Node, label_text: String, minimum: float,
++        maximum: float, step_size: float, start: float) -> SpinBox:
++    var group := VBoxContainer.new()
++    parent.add_child(group)
++    _new_label(group, label_text, 15, Color("#d8f7ff"))
++    var spin := SpinBox.new()
++    spin.min_value = minimum
++    spin.max_value = maximum
++    spin.step = step_size
++    spin.value = start
++    spin.custom_minimum_size.x = 145.0
++    group.add_child(spin)
++    return spin
++
++
++func _make_bar(parent: Node, color: Color) -> ProgressBar:
++    var bar := ProgressBar.new()
++    bar.min_value = 0.0
++    bar.max_value = 100.0
++    bar.show_percentage = false
++    bar.custom_minimum_size = Vector2(420, 21)
++    var fill := StyleBoxFlat.new()
++    fill.bg_color = color
++    fill.set_corner_radius_all(4)
++    bar.add_theme_stylebox_override("fill", fill)
++    var background := StyleBoxFlat.new()
++    background.bg_color = Color("#233a52")
++    background.set_corner_radius_all(4)
++    bar.add_theme_stylebox_override("background", background)
++    parent.add_child(bar)
++    return bar
++
++
++func configure_barrier(source: Node, display_name: String) -> void:
++    barrier_name = display_name
++    barrier_height = float(source.get("barrier_height"))
++    kinetic_coefficient = float(source.get("kinetic_coefficient"))
++    reference_energy = float(source.get("incident_energy"))
++    reference_width = float(source.get("model_width"))
++    energy_spin.max_value = maxf(0.1, barrier_height - 0.05)
++    _restore_defaults()
++
++
++func _restore_defaults() -> void:
++    energy_spin.value = clampf(reference_energy, energy_spin.min_value, energy_spin.max_value)
++    width_spin.value = clampf(reference_width, width_spin.min_value, width_spin.max_value)
++    clear_results()
++
++
++func _on_parameters_changed(_value: float) -> void:
++    clear_results()
++
++
++func _refresh_prediction() -> void:
++    if predicted_label == null:
++        return
++    barrier_label.text = "%s  |  V0 = %.2f  |  D = %.2f" % [barrier_name,
++            barrier_height, kinetic_coefficient]
++    var result: Dictionary = MODEL.evaluate(float(energy_spin.value),
++            barrier_height, float(width_spin.value), kinetic_coefficient)
++    if result.get("valid", false):
++        predicted_label.text = "Analytical prediction: T = %.3f%%    R = %.3f%%" % [
++                100.0 * float(result["probability"]),
++                100.0 * (1.0 - float(result["probability"]))]
++    else:
++        predicted_label.text = "Invalid parameters: " + str(result.get("reason", ""))
++
++
++func clear_results() -> void:
++    run_number = 0
++    total_trials = 0
++    total_transmitted = 0
++    last_result.clear()
++    _refresh_prediction()
++    _refresh_results()
++
++
++func _on_run_pressed(count: int) -> void:
++    run_batch(count)
++
++
++func run_batch(count: int) -> Dictionary:
++    var result: Dictionary = EXPERIMENT.run_barrier(float(energy_spin.value),
++            barrier_height, float(width_spin.value), kinetic_coefficient,
++            count, int(seed_spin.value) + run_number)
++    last_result = result.duplicate()
++    if result.get("valid", false):
++        run_number += 1
++        total_trials += int(result["trials"])
++        total_transmitted += int(result["transmitted"])
++    _refresh_results()
++    return result
++
++
++func _refresh_results() -> void:
++    if sample_label == null:
++        return
++    if not last_result.get("valid", false):
++        sample_label.text = "No trials yet." if last_result.is_empty() else \
++                "Cannot run experiment: " + str(last_result.get("reason", ""))
++        transmitted_label.text = "Transmitted: —"
++        reflected_label.text = "Reflected: —"
++        transmitted_bar.value = 0.0
++        reflected_bar.value = 0.0
++    else:
++        var trials := int(last_result["trials"])
++        var trans := int(last_result["transmitted"])
++        var reflected := int(last_result["reflected"])
++        var frequency := float(last_result["observed_frequency"])
++        transmitted_bar.value = frequency * 100.0
++        reflected_bar.value = 100.0 - frequency * 100.0
++        transmitted_label.text = "Transmitted: %d / %d" % [trans, trials]
++        reflected_label.text = "Reflected: %d / %d" % [reflected, trials]
++        sample_label.text = ("Latest: %.2f%% transmitted vs T = %.2f%%; "
++                + "SE = %.2f percentage points; seed %d") % [frequency * 100.0,
++                float(last_result["predicted_probability"]) * 100.0,
++                float(last_result["standard_error"]) * 100.0, int(last_result["seed"])]
++    var total_fraction := float(total_transmitted) / float(total_trials) \
++            if total_trials > 0 else 0.0
++    total_label.text = "Cumulative: %d transmitted of %d (%.2f%%)  |  %d batches" % [
++            total_transmitted, total_trials, total_fraction * 100.0, run_number]
++
++
++func _request_close() -> void:
++    close_requested.emit()
+diff --git a/game/tests/test_measurement.gd b/game/tests/test_measurement.gd
+new file mode 100644
+index 0000000..36adae4
+--- /dev/null
++++ b/game/tests/test_measurement.gd
+@@ -0,0 +1,54 @@
++extends SceneTree
++## G6 unit tests: physical consistency, reproducible Bernoulli batches, validation.
++
++const EXPERIMENT = preload("res://scripts/MeasurementExperiment.gd")
++const MODEL = preload("res://scripts/TunnelingModel.gd")
++var failures: Array[String] = []
++
++
++func _initialize() -> void:
++    call_deferred("run_tests")
++
++
++func check(condition: bool, description: String) -> void:
++    if not condition:
++        failures.append(description)
++        push_error(description)
++
++
++func run_tests() -> void:
++    var zero: Dictionary = EXPERIMENT.run_trials(0.0, 100, 42)
++    var one: Dictionary = EXPERIMENT.run_trials(1.0, 100, 42)
++    check(zero.get("valid", false) and zero["transmitted"] == 0,
++            "Zero probability reflects every trial")
++    check(one.get("valid", false) and one["transmitted"] == 100,
++            "Unit probability transmits every trial")
++    var a: Dictionary = EXPERIMENT.run_trials(0.37, 1000, 2026)
++    var b: Dictionary = EXPERIMENT.run_trials(0.37, 1000, 2026)
++    check(a == b, "Same seed and model produce an identical batch")
++    check(a["transmitted"] + a["reflected"] == 1000,
++            "Every trial is classified as transmitted or reflected")
++    check(absf(float(a["observed_frequency"]) - 0.37) < 0.08,
++            "Large batch agrees with prediction within broad tolerance")
++    check(absf(float(a["standard_error"]) - sqrt(0.37 * 0.63 / 1000.0)) < 0.000001,
++            "Sampling standard error uses Bernoulli variance")
++    check(not EXPERIMENT.run_trials(-0.1, 100)["valid"], "Reject p below zero")
++    check(not EXPERIMENT.run_trials(1.1, 100)["valid"], "Reject p above one")
++    check(not EXPERIMENT.run_trials(INF, 100)["valid"], "Reject nonfinite p")
++    check(not EXPERIMENT.run_trials(0.5, 0)["valid"], "Reject zero trials")
++    check(not EXPERIMENT.run_trials(0.5, 100001)["valid"], "Limit trial count")
++    var analytical: Dictionary = MODEL.evaluate(0.8, 1.2, 0.8, 0.5)
++    var scattering: Dictionary = EXPERIMENT.run_barrier(0.8, 1.2, 0.8, 0.5, 1000, 7)
++    check(scattering.get("valid", false), "Valid rectangular-barrier experiment")
++    check(is_equal_approx(float(scattering["predicted_probability"]),
++            float(analytical["probability"])), "Lab uses same equation as gameplay")
++    var thicker: Dictionary = MODEL.evaluate(0.8, 1.2, 1.4, 0.5)
++    check(thicker["probability"] < analytical["probability"],
++            "Larger width decreases under-barrier transmission")
++    check(not EXPERIMENT.run_barrier(1.5, 1.2, 0.8, 0.5, 10)["valid"],
++            "Reject E greater than barrier in this sub-barrier model")
++    if failures.is_empty():
++        print("PASS test_measurement.gd — reproducibility, probabilities and analytical model")
++    else:
++        printerr("FAIL test_measurement.gd: %d failures" % failures.size())
++    quit(0 if failures.is_empty() else 1)
+diff --git a/game/tests/test_measurement_lab.gd b/game/tests/test_measurement_lab.gd
+new file mode 100644
+index 0000000..6e9e628
+--- /dev/null
++++ b/game/tests/test_measurement_lab.gd
+@@ -0,0 +1,82 @@
++extends SceneTree
++## G6 integration: modal HUD, two existing barriers, sample counts, no game mutation.
++
++var failures: Array[String] = []
++
++
++func _initialize() -> void:
++    call_deferred("run_tests")
++
++
++func check(condition: bool, description: String) -> void:
++    if not condition:
++        failures.append(description)
++        push_error(description)
++
++
++func run_tests() -> void:
++    var packed: PackedScene = load("res://scenes/DemoLevel.tscn")
++    check(packed != null, "Scene loads with measurement laboratory")
++    if packed == null:
++        quit(1)
++        return
++    var level = packed.instantiate()
++    level.persistence_enabled = false
++    root.add_child(level)
++    await physics_frame
++    await physics_frame
++    var player = level.get_node("Player")
++    var barrier = level.get_node("Barrier")
++    var barrier2 = level.get_node("Barrier2")
++    var lab = level.measurement_lab
++    check(lab != null and not lab.visible, "Measurement lab starts hidden")
++    check(not level._open_measurement_lab(), "Must approach a barrier before opening")
++    player.global_position = Vector2(830, 595)
++    player.velocity = Vector2.ZERO
++    await physics_frame
++    check(level._open_measurement_lab(), "Lab opens beside barrier one")
++    check(lab.visible, "Lab becomes visible")
++    check(not player.is_physics_processing(), "Lab freezes player controls")
++    check(lab.barrier_name == "BARRIER 1", "Nearest barrier correctly selected")
++    var before_energy: float = barrier.incident_energy
++    var before_width: float = barrier.model_width
++    var before_coherence: float = player.coherence
++    lab.energy_spin.value = 0.95
++    lab.width_spin.value = 1.3
++    check(barrier.incident_energy == before_energy and barrier.model_width == before_width,
++            "Lab parameters do not overwrite gameplay barriers")
++    var one: Dictionary = lab.run_batch(10)
++    check(one.get("valid", false) and one["trials"] == 10,
++            "Interactive batch runs ten trials")
++    lab.clear_results()
++    check(lab.run_batch(10) == one, "Cleared series repeats exactly with the same seed")
++    var two: Dictionary = lab.run_batch(100)
++    check(two.get("valid", false), "Interactive second batch completes")
++    check(lab.total_trials == 110 and lab.run_number == 2,
++            "Cumulative counts combine identical settings")
++    check(lab.total_transmitted >= 0 and lab.total_transmitted <= 110,
++            "Accumulated transmitted count is bounded")
++    check(player.coherence == before_coherence,
++            "Measurements are free and do not change Coherence")
++    lab.width_spin.value = 1.5
++    check(lab.total_trials == 0 and lab.run_number == 0,
++            "Changing model parameters clears incomparable experiment results")
++    level._close_measurement_lab()
++    check(not lab.visible and player.is_physics_processing(),
++            "Closing lab restores player physics")
++    player.global_position = Vector2(1365, 595)
++    player.velocity = Vector2.ZERO
++    await physics_frame
++    check(level._open_measurement_lab(), "Lab opens beside barrier two")
++    check(lab.barrier_name == "BARRIER 2", "Second barrier is selected")
++    check(absf(lab.barrier_height - barrier2.barrier_height) < 0.0001,
++            "Second barrier parameters are loaded")
++    check(lab.run_batch(1000).get("valid", false), "One thousand trial batch completes")
++    level._close_measurement_lab()
++    level.queue_free()
++    await process_frame
++    if failures.is_empty():
++        print("PASS test_measurement_lab.gd — HUD, selection, parameters, controls, free sampling")
++    else:
++        printerr("FAIL test_measurement_lab.gd: %d failures" % failures.size())
++    quit(0 if failures.is_empty() else 1)

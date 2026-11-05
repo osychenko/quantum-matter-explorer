@@ -35,9 +35,11 @@ var reflected_bar: ProgressBar
 
 func _ready() -> void:
     name = "MeasurementLab"
+    set_anchors_preset(Control.PRESET_TOP_LEFT)
     position = Vector2(265, 46)
     custom_minimum_size = Vector2(750, 608)
-    mouse_filter = Control.MOUSE_FILTER_STOP
+    size = Vector2(750, 608)
+    mouse_filter = Control.MOUSE_FILTER_STOP    
     var style := StyleBoxFlat.new()
     style.bg_color = Color(0.037, 0.076, 0.13, 0.98)
     style.border_color = Color("#69cde5")
