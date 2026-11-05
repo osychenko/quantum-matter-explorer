@@ -9,6 +9,7 @@ const CHECKPOINT_POSITION := Vector2(1160, 595)
 const REALM_CHECKPOINT_POSITION := Vector2(2090, 595)
 const PROGRESSION = preload("res://scripts/ProgressionState.gd")
 const ECHO_GHOST = preload("res://scripts/EchoGhost.gd")
+const MEASUREMENT_LAB = preload("res://scripts/MeasurementLab.gd")
 const GATE_OPEN_SECONDS := 4.0
 const ECHO_SWITCH_RANGE := 43.0
 const REALM_GATE_SAFETY_RANGE := 48.0
@@ -47,10 +48,12 @@ var science_panel: PanelContainer
 var science_body: Label
 var inventory_panel: PanelContainer
 var inventory_body: Label
+var measurement_lab: Variant = null
 var win := false
 var _f_was_pressed := false
 var _i_was_pressed := false
 var _n_was_pressed := false
+var _m_was_pressed := false
 var _status_time := 0.0
 
 
@@ -228,6 +231,36 @@ func _make_hud() -> void:
     inventory_panel.visible = false
     _refresh_inventory()
 
+    # G6: a modal learning UI. It is independent of save data and physics barriers.
+    measurement_lab = MEASUREMENT_LAB.new()
+    root.add_child(measurement_lab)
+    measurement_lab.visible = false
+    measurement_lab.close_requested.connect(_close_measurement_lab)
+
+
+func _open_measurement_lab() -> bool:
+    if measurement_lab.visible:
+        return true
+    var nearby: Variant = player.get_nearby_barrier()
+    if nearby == null:
+        _show_status("Approach a blue tunneling barrier, then press M for the lab.", 4.0)
+        return false
+    var display_name := "BARRIER 1" if nearby == barrier else "BARRIER 2"
+    measurement_lab.configure_barrier(nearby, display_name)
+    science_panel.visible = false
+    inventory_panel.visible = false
+    player.velocity = Vector2.ZERO
+    player.set_physics_process(false)
+    measurement_lab.visible = true
+    return true
+
+
+func _close_measurement_lab() -> void:
+    if not measurement_lab.visible:
+        return
+    measurement_lab.visible = false
+    player.set_physics_process(true)
+
 
 func _refresh_science() -> void:
     _refresh_science_for(barrier)
@@ -268,6 +301,18 @@ func _refresh_realm_science() -> void:
 
 
 func _process(delta: float) -> void:
+    var m_pressed := Input.is_physical_key_pressed(KEY_M)
+    if m_pressed and not _m_was_pressed:
+        if measurement_lab.visible:
+            _close_measurement_lab()
+        else:
+            _open_measurement_lab()
+    _m_was_pressed = m_pressed
+    if measurement_lab.visible:
+        if Input.is_action_just_pressed("ui_cancel"):
+            _close_measurement_lab()
+        # Keep the world stable while adjusting the laboratory's UI controls.
+        return
     # Recover from falling outside the playable area.
     if player.global_position.y > 900.0:
         player.global_position = respawn_position
@@ -278,18 +323,18 @@ func _process(delta: float) -> void:
     var near: bool = active != null
     var probability: Dictionary = active.transmission() if near else barrier.transmission()
     if win:
-        hint_text.text = "CHAMBER CLEARED  ·  PHASE G5 COMPLETE  ·  I INVENTORY"
+        hint_text.text = "CHAMBER CLEARED  ·  M MEASUREMENT LAB NEAR BARRIERS  ·  I INVENTORY"
     elif not player.tunneling_unlocked:
-        hint_text.text = "TUNNELING LOCKED  ·  FIND THE GLOWING CORE  ·  I INVENTORY"
+        hint_text.text = "TUNNELING LOCKED · FIND BLUE CORE · M LAB NEAR BARRIER · I INVENTORY"
     elif near:
         hint_text.text = ("E TUNNEL  ·  T = %.1f%%" % (100.0 * probability.get("probability", 0.0))) \
-                + "  ·  COST 18 COHERENCE  ·  F SCIENCE  ·  I INVENTORY"
+                + "  ·  M MEASUREMENT LAB  ·  F SCIENCE  ·  I INVENTORY"
     elif player.imaginary_time_unlocked and player.global_position.x > 2100.0:
         hint_text.text = "R REALM (30)  ·  CROSS GREEN GATE  ·  JUMP OVER GREEN SPIKES  ·  I INVENTORY"
     elif player.echoes_unlocked and player.global_position.x > 1520.0:
         hint_text.text = "WALK OVER VIOLET PAD  ·  Q REPLAY (22)  ·  CROSS THE OPEN GATE  ·  I INVENTORY"
     elif player.tunneling_unlocked:
-        hint_text.text = "A/D MOVE  ·  SPACE JUMP  ·  E TUNNEL  ·  Q ECHO  ·  R REALM  ·  I INVENTORY"
+        hint_text.text = "A/D MOVE · SPACE JUMP · E TUNNEL · Q ECHO · R REALM · M LAB · I INVENTORY"
     var f_pressed := Input.is_physical_key_pressed(KEY_F)
     if f_pressed and not _f_was_pressed:
         science_panel.visible = not science_panel.visible
@@ -476,6 +521,7 @@ func _on_realm_result(result: Dictionary) -> void:
 
 
 func _reset_progression() -> void:
+    _close_measurement_lab()
     progression.reset()
     player.tunneling_unlocked = false
     player.echoes_unlocked = false
