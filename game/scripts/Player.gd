@@ -4,6 +4,7 @@ extends CharacterBody2D
 signal tunneling_result(outcome: Dictionary)
 signal echo_requested(recording: Array)
 signal echo_result(outcome: Dictionary)
+signal realm_result(outcome: Dictionary)
 
 const WALK_SPEED := 285.0
 const ACCELERATION := 2350.0
@@ -22,6 +23,9 @@ const ECHO_COST := 22.0
 const ECHO_COOLDOWN := 5.0
 const ECHO_RECORD_FRAMES := 120  # ~2 seconds at Godot's default 60 Hz physics tick.
 const ECHO_MIN_FRAMES := 12
+const REALM_COST := 30.0
+const REALM_DURATION := 7.0
+const REALM_COOLDOWN := 10.0
 
 var coherence := MAX_COHERENCE
 var barrier: Variant = null
@@ -31,6 +35,10 @@ var jump_buffer_remaining := 0.0
 var tunnel_cooldown_remaining := 0.0
 var tunneling_unlocked := false
 var echoes_unlocked := false
+var imaginary_time_unlocked := false
+var realm_remaining := 0.0
+var realm_cooldown_remaining := 0.0
+var realm_uses := 0
 var echo_cooldown_remaining := 0.0
 var echo_history: Array[Vector2] = []
 var echo_uses := 0
@@ -42,6 +50,7 @@ var facing := 1.0
 var _e_was_pressed := false
 var _space_was_pressed := false
 var _q_was_pressed := false
+var _r_was_pressed := false
 
 
 func _ready() -> void:
@@ -53,6 +62,8 @@ func _physics_process(delta: float) -> void:
     coherence = minf(MAX_COHERENCE, coherence + REGEN_PER_SECOND * delta)
     tunnel_cooldown_remaining = maxf(0.0, tunnel_cooldown_remaining - delta)
     echo_cooldown_remaining = maxf(0.0, echo_cooldown_remaining - delta)
+    realm_cooldown_remaining = maxf(0.0, realm_cooldown_remaining - delta)
+    realm_remaining = maxf(0.0, realm_remaining - delta)
     var right_down := Input.is_physical_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)
     var left_down := Input.is_physical_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT)
     var axis := int(right_down) - int(left_down)
@@ -90,6 +101,10 @@ func _physics_process(delta: float) -> void:
     if q_pressed and not _q_was_pressed:
         attempt_echo()
     _q_was_pressed = q_pressed
+    var r_pressed := Input.is_physical_key_pressed(KEY_R)
+    if r_pressed and not _r_was_pressed:
+        attempt_imaginary_time()
+    _r_was_pressed = r_pressed
     var e_pressed := Input.is_physical_key_pressed(KEY_E)
     if e_pressed and not _e_was_pressed:
         attempt_tunneling()
@@ -173,6 +188,36 @@ func attempt_echo() -> Dictionary:
     return outcome
 
 
+func is_realm_active() -> bool:
+    return realm_remaining > 0.0
+
+
+func attempt_imaginary_time() -> Dictionary:
+    # Gameplay metaphor for imaginary-time projection; not time travel or simulation.
+    var outcome: Dictionary
+    if not imaginary_time_unlocked:
+        outcome = {"activated": false, "cost": 0.0,
+                "reason": "Imaginary-Time Realm locked: collect the green prism."}
+    elif is_realm_active():
+        outcome = {"activated": false, "cost": 0.0,
+                "reason": "The realm is already active."}
+    elif realm_cooldown_remaining > 0.0:
+        outcome = {"activated": false, "cost": 0.0,
+                "reason": "Imaginary-Time Realm is recharging."}
+    elif coherence < REALM_COST:
+        outcome = {"activated": false, "cost": 0.0,
+                "reason": "Not enough Coherence (30 required)."}
+    else:
+        coherence -= REALM_COST
+        realm_remaining = REALM_DURATION
+        realm_cooldown_remaining = REALM_COOLDOWN
+        realm_uses += 1
+        outcome = {"activated": true, "cost": REALM_COST,
+                "duration": REALM_DURATION}
+    realm_result.emit(outcome)
+    return outcome
+
+
 func _draw() -> void:
     if glow_time > 0.0:
         for i in range(4):
@@ -181,6 +226,9 @@ func _draw() -> void:
                     0, TAU, 48, Color(0.40, 0.90, 1.0, alpha), 2.0)
         draw_circle(Vector2(0, -6), 31.0 + 8.0 * glow_time,
                 Color(0.25, 0.89, 1.0, glow_time * 0.4))
+    if is_realm_active():
+        draw_arc(Vector2(0, -8), 33.0, 0.0, TAU, 48,
+                Color(0.42, 1.0, 0.77, 0.8), 3.0)
     # Original simple geometric avatar; no external art assets or IP.
     draw_line(Vector2(-9, 12), Vector2(-15, 22), Color("#94c9d4"), 5.0)
     draw_line(Vector2(9, 12), Vector2(15, 22), Color("#94c9d4"), 5.0)

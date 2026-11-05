@@ -2,14 +2,16 @@ extends Node2D
 ## A single-room vertical slice, with original programmatic placeholder art.
 ## The educational calculation is deliberately local and does not call FastAPI.
 
-const WORLD_WIDTH := 2000.0
+const WORLD_WIDTH := 2880.0
 const FLOOR_TOP := 640.0
 const START_POSITION := Vector2(210, 595)
 const CHECKPOINT_POSITION := Vector2(1160, 595)
+const REALM_CHECKPOINT_POSITION := Vector2(2090, 595)
 const PROGRESSION = preload("res://scripts/ProgressionState.gd")
 const ECHO_GHOST = preload("res://scripts/EchoGhost.gd")
 const GATE_OPEN_SECONDS := 4.0
 const ECHO_SWITCH_RANGE := 43.0
+const REALM_GATE_SAFETY_RANGE := 48.0
 
 @export var persistence_enabled := true
 var progression = PROGRESSION.new()
@@ -17,16 +19,24 @@ var progression = PROGRESSION.new()
 @onready var player: Variant = $Player
 @onready var barrier: Variant = $Barrier
 @onready var barrier2: Variant = $Barrier2
-@onready var checkpoint: Area2D = $Checkpoint
+@onready var checkpoint: Variant = $Checkpoint
 @onready var hazard: Area2D = $Hazard
 @onready var goal: Area2D = $Goal
 @onready var ability_relic: Area2D = $AbilityRelic
 @onready var echo_relic: Area2D = $EchoRelic
-@onready var echo_switch: Area2D = $EchoSwitch
-@onready var echo_gate: StaticBody2D = $EchoGate
+@onready var echo_switch: Variant = $EchoSwitch
+@onready var echo_gate: Variant = $EchoGate
+@onready var imaginary_relic: Area2D = $ImaginaryRelic
+@onready var realm_gate: Variant = $RealmGate
+@onready var spectral_bridge: Variant = $SpectralBridge
+@onready var realm_hazard: Area2D = $RealmHazard
+@onready var realm_checkpoint: Variant = $RealmCheckpoint
+@onready var echo_milestone: Area2D = $EchoMilestone
 var echo_ghost: Node2D = null
 var gate_open_remaining := 0.0
 var echo_gate_open := false
+var realm_environment_active := false
+var realm_checkpoint_activated := false
 var respawn_position := START_POSITION
 var checkpoint_activated := false
 
@@ -45,16 +55,17 @@ var _status_time := 0.0
 
 
 func _ready() -> void:
-    _make_solid("Ground", Vector2(WORLD_WIDTH / 2.0, 690), Vector2(WORLD_WIDTH, 100))
-    # Invisible walls prevent the player from leaving the playable world.
-    _make_solid("LeftBoundary", Vector2(-20, 360), Vector2(40, 1200))
-    _make_solid("RightBoundary", Vector2(WORLD_WIDTH + 20, 360), Vector2(40, 1200))
-    _make_solid("LeftLedge", Vector2(450, 550), Vector2(160, 22))
-    _make_solid("RightLedge", Vector2(1400, 535), Vector2(180, 22))
+    # All ground, ledges, boundaries and gates are editor-managed scene nodes.
+    # Their visuals and colliders are driven by LevelPlatform.gd.
     player.barrier = barrier
     player.additional_barriers.append(barrier2)
     ability_relic.body_entered.connect(_on_relic_collected)
     echo_relic.body_entered.connect(_on_echo_relic_collected)
+    imaginary_relic.body_entered.connect(_on_imaginary_relic_collected)
+    echo_milestone.body_entered.connect(_on_echo_milestone)
+    realm_checkpoint.body_entered.connect(_on_realm_checkpoint)
+    realm_hazard.body_entered.connect(_on_hazard)
+    player.realm_result.connect(_on_realm_result)
     player.echo_requested.connect(_on_echo_requested)
     player.echo_result.connect(_on_echo_result)
     checkpoint.body_entered.connect(_on_checkpoint)
@@ -65,7 +76,9 @@ func _ready() -> void:
     if persistence_enabled:
         progression.load_from_path()
     _restore_progression()
-    if player.echoes_unlocked:
+    if player.imaginary_time_unlocked:
+        _show_status("Realm unlocked: press R near the green gate; cross the spectral bridge.", 6.0)
+    elif player.echoes_unlocked:
         _show_status("Echoes restored. Press Q to replay motion at the violet switch.", 6.0)
     elif player.tunneling_unlocked:
         _show_status("Progress restored. Cross barrier two to find the Echo shard.", 5.0)
@@ -82,89 +95,46 @@ func _physics_process(delta: float) -> void:
     if echo_gate_open and absf(player.global_position.x - echo_gate.global_position.x) < 42.0:
         gate_open_remaining = maxf(gate_open_remaining, 0.2)
     _set_echo_gate_open(gate_open_remaining > 0.0)
+    # Extend the realm briefly if its collider would materialize on top of the player.
+    if realm_environment_active and absf(player.global_position.x - realm_gate.global_position.x) \
+            < REALM_GATE_SAFETY_RANGE and player.realm_remaining <= 0.0:
+        player.realm_remaining = 0.2
+    _set_realm_environment(player.is_realm_active())
 
 
 func _set_echo_gate_open(opened: bool) -> void:
     if echo_gate_open == opened:
         return
     echo_gate_open = opened
-    var collider := echo_gate.get_node("CollisionShape2D") as CollisionShape2D
-    collider.set_deferred("disabled", opened)
+    echo_gate.set_solid(not opened)
+    echo_switch.set_marker_active(opened)
+
+
+func _set_realm_environment(active: bool) -> void:
+    if realm_environment_active == active:
+        return
+    realm_environment_active = active
+    realm_gate.set_solid(not active)
+    spectral_bridge.set_solid(active)
     queue_redraw()
 
 
-func _make_solid(label: String, place: Vector2, size: Vector2) -> void:
-    var body := StaticBody2D.new()
-    body.name = label
-    body.position = place
-    body.collision_layer = 1
-    body.collision_mask = 0
-    var shape := RectangleShape2D.new()
-    shape.size = size
-    var collider := CollisionShape2D.new()
-    collider.shape = shape
-    body.add_child(collider)
-    add_child(body)
-
-
 func _draw() -> void:
+    # Decorative atmosphere only: ALL physical geometry and game markers are
+    # individual draggable nodes in DemoLevel.tscn, not hardcoded coordinates.
     draw_rect(Rect2(0, 0, WORLD_WIDTH, 720), Color("#071325"))
-    # Sparse distant structures and lights suggest a mysterious science-fantasy ruin.
-    for i in range(18):
+    for i in range(int(WORLD_WIDTH / 119.0) + 1):
         var xx := float(i) * 119.0 + 24.0
         var yy := 105.0 + 31.0 * sin(float(i) * 2.13)
         draw_circle(Vector2(xx, yy), 1.9, Color(0.6, 0.9, 1.0, 0.6))
-    for i in range(11):
+    for i in range(int(WORLD_WIDTH / 206.0) + 1):
         var x := float(i) * 206.0 - 26.0
         var h := 110.0 + 52.0 * sin(float(i) * 1.7)
         draw_rect(Rect2(x, FLOOR_TOP - h, 82, h), Color("#0d2034"))
         draw_rect(Rect2(x + 12, FLOOR_TOP - h - 18, 58, 18), Color("#132c44"))
-        draw_line(Vector2(x + 41, FLOOR_TOP - h + 10),
-                Vector2(x + 41, FLOOR_TOP - 12), Color("#1f4261"), 2.0)
-    draw_rect(Rect2(0, FLOOR_TOP, WORLD_WIDTH, 80), Color("#122538"))
-    draw_line(Vector2(0, FLOOR_TOP), Vector2(WORLD_WIDTH, FLOOR_TOP), Color("#78c6ba"), 3.0)
-    for x in range(0, 2000, 54):
-        draw_line(Vector2(x, FLOOR_TOP + 21), Vector2(x + 28, FLOOR_TOP + 30),
-                Color("#2a5362"), 2.0)
-    for ledge in [Rect2(370, 539, 160, 22), Rect2(1310, 524, 180, 22)]:
-        draw_rect(ledge, Color("#234257"))
-        draw_line(ledge.position, ledge.position + Vector2(ledge.size.x, 0),
-                Color("#8bd3d1"), 3.0)
-    if not player.tunneling_unlocked:
-        # A visible collectible, paired with the AbilityRelic Area2D trigger.
-        draw_circle(Vector2(640, 595), 38, Color(0.48, 0.77, 1.0, 0.16))
-        draw_arc(Vector2(640, 595), 30, 0, TAU, 48, Color("#7fe2fc"), 3.0)
-        draw_colored_polygon(PackedVector2Array([
-                Vector2(640, 573), Vector2(657, 595),
-                Vector2(640, 617), Vector2(623, 595)]), Color("#87d8ff"))
-        draw_circle(Vector2(640, 595), 7, Color("#e4fff8"))
-    if not player.echoes_unlocked:
-        draw_circle(Vector2(1570, 595), 35, Color(0.67, 0.48, 1.0, 0.19))
-        draw_arc(Vector2(1570, 595), 27, 0, TAU, 42, Color("#bb91ff"), 3.0)
-        draw_colored_polygon(PackedVector2Array([
-                Vector2(1570, 575), Vector2(1583, 595),
-                Vector2(1570, 615), Vector2(1557, 595)]), Color("#c9a8ff"))
-    draw_rect(Rect2(1580, 627, 60, 10), Color("#74569b"))
-    draw_line(Vector2(1580, 627), Vector2(1640, 627),
-            Color("#e3baff") if echo_gate_open else Color("#ac83db"), 3.0)
-    if echo_gate_open:
-        draw_rect(Rect2(1680, 0, 40, 640), Color(0.45, 0.95, 0.85, 0.10))
-        draw_line(Vector2(1700, 0), Vector2(1700, 640), Color("#70eecb"), 2.0)
-    else:
-        draw_rect(Rect2(1680, 0, 40, 640), Color(0.55, 0.31, 0.86, 0.54))
-        draw_line(Vector2(1680, 0), Vector2(1680, 640), Color("#e3bdff"), 2.0)
-        draw_line(Vector2(1720, 0), Vector2(1720, 640), Color("#e3bdff"), 2.0)
-    draw_circle(Vector2(1160, 585), 26, Color(0.31, 0.94, 0.81, 0.22))
-    draw_arc(Vector2(1160, 585), 22, 0, TAU, 48,
-            Color("#70eecb") if checkpoint_activated else Color("#567e8b"), 3.0)
-    for i in range(5):
-        var px := 1272.0 + float(i) * 14.0
-        draw_colored_polygon(PackedVector2Array([Vector2(px, 640),
-                Vector2(px + 7.0, 593), Vector2(px + 14.0, 640)]), Color("#ee6b80"))
-    draw_circle(Vector2(1770, 585), 45, Color(0.31, 0.94, 0.81, 0.13))
-    draw_arc(Vector2(1770, 585), 31, 0, TAU, 50, Color("#70eecb"), 4.0)
-    draw_circle(Vector2(1770, 585), 13, Color("#c4ffdc"))
-    draw_arc(Vector2(1770, 585), 51, 0.1, 4.1, 60, Color(0.53, 1.0, 0.9, 0.23), 3.0)
+    if realm_environment_active:
+        draw_rect(Rect2(1860, 0, WORLD_WIDTH - 1860, 720),
+                Color(0.15, 0.48, 0.40, 0.12))
 
 
 func _make_label(parent: Node, text_value: String, where: Vector2,
@@ -238,7 +208,7 @@ func _make_hud() -> void:
     var inventory := PanelContainer.new()
     inventory.name = "AbilityInventory"
     inventory.position = Vector2(24, 182)
-    inventory.custom_minimum_size = Vector2(610, 350)
+    inventory.custom_minimum_size = Vector2(620, 485)
     inventory.mouse_filter = Control.MOUSE_FILTER_IGNORE
     var inventory_style := StyleBoxFlat.new()
     inventory_style.bg_color = Color(0.07, 0.14, 0.23, 0.97)
@@ -248,9 +218,9 @@ func _make_hud() -> void:
     inventory_style.set_content_margin_all(17)
     inventory.add_theme_stylebox_override("panel", inventory_style)
     inventory_body = Label.new()
-    inventory_body.custom_minimum_size = Vector2(570, 315)
+    inventory_body.custom_minimum_size = Vector2(580, 455)
     inventory_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    inventory_body.add_theme_font_size_override("font_size", 17)
+    inventory_body.add_theme_font_size_override("font_size", 16)
     inventory_body.add_theme_color_override("font_color", Color("#dcebf7"))
     inventory.add_child(inventory_body)
     root.add_child(inventory)
@@ -287,6 +257,16 @@ func _refresh_echo_science() -> void:
             + "a quantum-mechanical prediction.  [F] close")
 
 
+func _refresh_realm_science() -> void:
+    science_body.text = ("IMAGINARY-TIME PROJECTION  ·  GAMEPLAY METAPHOR\n"
+            + "In ground-state QMC, exp[-τ(H - Eref)] suppresses\n"
+            + "excited-state amplitudes relative to low-energy ones\n"
+            + "(given nonzero ground-state overlap).\n"
+            + "Press R: a spectral bridge appears and a gate opens.\n"
+            + "This timed realm is FICTIONAL: no real-time travel,\n"
+            + "imaginary-time dynamics, or QMC is computed. [F] close")
+
+
 func _process(delta: float) -> void:
     # Recover from falling outside the playable area.
     if player.global_position.y > 900.0:
@@ -298,16 +278,18 @@ func _process(delta: float) -> void:
     var near: bool = active != null
     var probability: Dictionary = active.transmission() if near else barrier.transmission()
     if win:
-        hint_text.text = "CHAMBER CLEARED  ·  PHASE G4 COMPLETE  ·  I INVENTORY"
+        hint_text.text = "CHAMBER CLEARED  ·  PHASE G5 COMPLETE  ·  I INVENTORY"
     elif not player.tunneling_unlocked:
         hint_text.text = "TUNNELING LOCKED  ·  FIND THE GLOWING CORE  ·  I INVENTORY"
     elif near:
         hint_text.text = ("E TUNNEL  ·  T = %.1f%%" % (100.0 * probability.get("probability", 0.0))) \
                 + "  ·  COST 18 COHERENCE  ·  F SCIENCE  ·  I INVENTORY"
+    elif player.imaginary_time_unlocked and player.global_position.x > 2100.0:
+        hint_text.text = "R REALM (30)  ·  CROSS GREEN GATE  ·  JUMP OVER GREEN SPIKES  ·  I INVENTORY"
     elif player.echoes_unlocked and player.global_position.x > 1520.0:
         hint_text.text = "WALK OVER VIOLET PAD  ·  Q REPLAY (22)  ·  CROSS THE OPEN GATE  ·  I INVENTORY"
     elif player.tunneling_unlocked:
-        hint_text.text = "A/D MOVE  ·  SPACE JUMP  ·  E TUNNEL  ·  Q ECHO  ·  I INVENTORY"
+        hint_text.text = "A/D MOVE  ·  SPACE JUMP  ·  E TUNNEL  ·  Q ECHO  ·  R REALM  ·  I INVENTORY"
     var f_pressed := Input.is_physical_key_pressed(KEY_F)
     if f_pressed and not _f_was_pressed:
         science_panel.visible = not science_panel.visible
@@ -328,6 +310,8 @@ func _process(delta: float) -> void:
     _n_was_pressed = n_pressed
     if near:
         _refresh_science_for(active)
+    elif player.imaginary_time_unlocked and player.global_position.x > 1900.0:
+        _refresh_realm_science()
     elif player.echoes_unlocked and player.global_position.x > 1510.0:
         _refresh_echo_science()
     if _status_time > 0.0:
@@ -344,31 +328,46 @@ func _show_status(message: String, duration: float = 3.5) -> void:
 func _refresh_inventory() -> void:
     var tunneling_status := "UNLOCKED" if player.tunneling_unlocked else "LOCKED"
     var echo_status := "UNLOCKED" if player.echoes_unlocked else "LOCKED"
+    var realm_status := "UNLOCKED" if player.imaginary_time_unlocked else "LOCKED"
     var checkpoint_status := "ACTIVE" if checkpoint_activated else "NOT REACHED"
-    var cleared_status := "YES" if progression.echo_gate_cleared else "NO"
+    var echo_cleared := "YES" if progression.echo_gate_cleared else "NO"
+    var realm_cleared := "YES" if progression.realm_gate_cleared else "NO"
     inventory_body.text = ("QUANTUM ABILITIES  /  DISCOVERY JOURNAL\n\n"
             + "1. QUANTUM TUNNELING  [%s]\n" % tunneling_status
-            + "   Cross a barrier using analytical 1D transmission.\n"
-            + "   Unlock by collecting the blue quantum core.  [E]\n\n"
+            + "   Blue core; [E]; exact stationary 1D transmission.\n\n"
             + "2. QMC ECHOES  [%s]\n" % echo_status
-            + "   Collect violet shard after barrier two; press [Q].\n"
-            + "   Replay last ~2 s; ghost opens violet gate (22 Coherence).\n"
-            + "   Motion recording only: NOT real QMC or a clone.\n\n"
-            + "3. IMAGINARY-TIME REALM  [COMING LATER]\n"
-            + "   A future mechanic; imaginary time is mathematical, not travel.\n\n"
-            + "Checkpoint: %s    Echo gate cleared: %s\n" % [checkpoint_status, cleared_status]
+            + "   Violet shard; [Q]; replay last ~2 seconds (22 Coherence).\n"
+            + "   Recorded gameplay history, NOT quantum cloning/QMC.\n\n"
+            + "3. IMAGINARY-TIME REALM  [%s]\n" % realm_status
+            + "   Green prism; [R]; 7 s realm (30 Coherence).\n"
+            + "   Opens green gate and activates spectral bridge.\n"
+            + "   Inspired by exp[-τ(H-Eref)], NOT time travel/QMC.\n\n"
+            + "Checkpoint: %s    Echo puzzle: %s    Realm: %s\n" % [
+                    checkpoint_status, echo_cleared, realm_cleared]
             + "[I] close    [SHIFT+N] reset local progress")
 
 
 func _restore_progression() -> void:
     player.tunneling_unlocked = progression.is_unlocked(PROGRESSION.TUNNELING)
     player.echoes_unlocked = progression.is_unlocked(PROGRESSION.ECHOES)
+    player.imaginary_time_unlocked = progression.is_unlocked(PROGRESSION.IMAGINARY_TIME)
     checkpoint_activated = progression.checkpoint_reached
-    respawn_position = CHECKPOINT_POSITION if checkpoint_activated else START_POSITION
+    realm_checkpoint_activated = progression.realm_checkpoint_reached
+    respawn_position = START_POSITION
+    if realm_checkpoint_activated:
+        respawn_position = realm_checkpoint.global_position + Vector2(0, 10)
+    elif checkpoint_activated:
+        respawn_position = checkpoint.global_position + Vector2(0, 10)
     player.global_position = respawn_position
     player.velocity = Vector2.ZERO
     ability_relic.monitoring = not player.tunneling_unlocked
     echo_relic.monitoring = not player.echoes_unlocked
+    imaginary_relic.monitoring = not player.imaginary_time_unlocked
+    ability_relic.visible = not player.tunneling_unlocked
+    echo_relic.visible = not player.echoes_unlocked
+    imaginary_relic.visible = not player.imaginary_time_unlocked
+    checkpoint.set_marker_active(checkpoint_activated)
+    realm_checkpoint.set_marker_active(realm_checkpoint_activated)
     _refresh_inventory()
     queue_redraw()
 
@@ -385,6 +384,7 @@ func _on_relic_collected(body: Node2D) -> void:
         return
     player.tunneling_unlocked = true
     ability_relic.set_deferred("monitoring", false)
+    ability_relic.visible = false
     _save_progression()
     _refresh_inventory()
     science_panel.visible = true
@@ -400,11 +400,49 @@ func _on_echo_relic_collected(body: Node2D) -> void:
         return
     player.echoes_unlocked = true
     echo_relic.set_deferred("monitoring", false)
+    echo_relic.visible = false
     _save_progression()
     _refresh_inventory()
     _refresh_echo_science()
     _show_status("QMC ECHOES UNLOCKED! Walk across the violet pad; press Q near the gate.", 7.0)
     queue_redraw()
+
+
+func _on_imaginary_relic_collected(body: Node2D) -> void:
+    if body != player or player.imaginary_time_unlocked:
+        return
+    if not progression.unlock(PROGRESSION.IMAGINARY_TIME):
+        return
+    player.imaginary_time_unlocked = true
+    imaginary_relic.set_deferred("monitoring", false)
+    imaginary_relic.visible = false
+    _save_progression()
+    _refresh_inventory()
+    _refresh_realm_science()
+    _show_status("IMAGINARY-TIME REALM UNLOCKED! Press R by the green gate.", 7.0)
+
+
+func _on_echo_milestone(body: Node2D) -> void:
+    if body != player or progression.echo_gate_cleared:
+        return
+    progression.echo_gate_cleared = true
+    _save_progression()
+    _refresh_inventory()
+    _show_status("ECHO PUZZLE COMPLETE — a green prism lies ahead.", 5.0)
+
+
+func _on_realm_checkpoint(body: Node2D) -> void:
+    if body != player or realm_checkpoint_activated:
+        return
+    realm_checkpoint_activated = true
+    checkpoint_activated = true
+    progression.checkpoint_reached = true
+    progression.realm_checkpoint_reached = true
+    respawn_position = realm_checkpoint.global_position + Vector2(0, 10)
+    realm_checkpoint.set_marker_active(true)
+    _save_progression()
+    _refresh_inventory()
+    _show_status("REALM CHECKPOINT — respawn now starts beyond the Echo gate.", 5.0)
 
 
 func _on_echo_requested(recording: Array) -> void:
@@ -429,10 +467,21 @@ func _on_echo_result(result: Dictionary) -> void:
         _show_status(str(result.get("reason", "Echo unavailable.")), 3.0)
 
 
+func _on_realm_result(result: Dictionary) -> void:
+    if result.get("activated", false):
+        _set_realm_environment(true)
+        _show_status("IMAGINARY-TIME REALM — gate and spectral bridge active (7 s).", 4.0)
+    else:
+        _show_status(str(result.get("reason", "Realm unavailable.")), 3.0)
+
+
 func _reset_progression() -> void:
     progression.reset()
     player.tunneling_unlocked = false
     player.echoes_unlocked = false
+    player.imaginary_time_unlocked = false
+    player.realm_remaining = 0.0
+    player.realm_cooldown_remaining = 0.0
     player.echo_history.clear()
     player.echo_cooldown_remaining = 0.0
     if is_instance_valid(echo_ghost):
@@ -440,19 +489,27 @@ func _reset_progression() -> void:
     echo_ghost = null
     gate_open_remaining = 0.0
     _set_echo_gate_open(false)
+    _set_realm_environment(false)
     player.coherence = player.MAX_COHERENCE
     player.tunnel_cooldown_remaining = 0.0
     player.velocity = Vector2.ZERO
     player.global_position = START_POSITION
     respawn_position = START_POSITION
     checkpoint_activated = false
+    realm_checkpoint_activated = false
+    checkpoint.set_marker_active(false)
+    realm_checkpoint.set_marker_active(false)
     win = false
     ability_relic.set_deferred("monitoring", true)
     echo_relic.set_deferred("monitoring", true)
+    imaginary_relic.set_deferred("monitoring", true)
+    ability_relic.visible = true
+    echo_relic.visible = true
+    imaginary_relic.visible = true
     science_panel.visible = false
     _save_progression()
     _refresh_inventory()
-    _show_status("Progress reset. Collect blue and violet relics to unlock abilities.", 5.0)
+    _show_status("Progress reset. Collect blue, violet and green relics.", 5.0)
     queue_redraw()
 
 
@@ -471,17 +528,19 @@ func _on_goal_reached(body: Node2D) -> void:
     win = true
     progression.chamber_cleared = true
     progression.echo_gate_cleared = true
+    progression.realm_gate_cleared = true
     _save_progression()
     _refresh_inventory()
-    _show_status("CHAMBER CLEARED — Tunneling and Echoes mastered!", 9999.0)
+    _show_status("CHAMBER CLEARED — Tunneling, Echoes, and Realm mastered!", 9999.0)
 
 
 func _on_checkpoint(body: Node2D) -> void:
     if body != player or checkpoint_activated:
         return
     checkpoint_activated = true
-    respawn_position = CHECKPOINT_POSITION
+    respawn_position = checkpoint.global_position + Vector2(0, 10)
     progression.checkpoint_reached = true
+    checkpoint.set_marker_active(true)
     _save_progression()
     _refresh_inventory()
     _show_status("CHECKPOINT ACTIVATED — safe position recorded.", 3.5)
