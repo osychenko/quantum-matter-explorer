@@ -159,7 +159,7 @@ func _refresh_science() -> void:
 
 func _process(delta: float) -> void:
     coherence_bar.value = player.coherence
-    var near := barrier.is_near_player(player)
+    var near: bool = barrier.is_near_player(player)
     if player.discovered and not _discovery_announced:
         _discovery_announced = true
         science_panel.visible = true
