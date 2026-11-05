@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/DemoLevel.gd" id="1_level"]
 [ext_resource type="Script" path="res://scripts/Player.gd" id="2_player"]
@@ -15,6 +15,9 @@ radius = 44.0
 
 [sub_resource type="RectangleShape2D" id="Rect_hazard"]
 size = Vector2(72, 40)
+
+[sub_resource type="RectangleShape2D" id="Rect_echo_gate"]
+size = Vector2(40, 640)
 
 [node name="DemoLevel" type="Node2D"]
 script = ExtResource("1_level")
@@ -45,6 +48,32 @@ monitoring = true
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="AbilityRelic"]
 shape = SubResource("Circle_goal")
+
+[node name="EchoRelic" type="Area2D" parent="."]
+position = Vector2(1570, 595)
+collision_layer = 0
+collision_mask = 4
+monitoring = true
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="EchoRelic"]
+shape = SubResource("Circle_goal")
+
+[node name="EchoSwitch" type="Area2D" parent="."]
+position = Vector2(1610, 605)
+collision_layer = 0
+collision_mask = 4
+monitoring = true
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="EchoSwitch"]
+shape = SubResource("Circle_goal")
+
+[node name="EchoGate" type="StaticBody2D" parent="."]
+position = Vector2(1700, 320)
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="EchoGate"]
+shape = SubResource("Rect_echo_gate")
 
 [node name="Barrier" type="StaticBody2D" parent="."]
 position = Vector2(945, 320)

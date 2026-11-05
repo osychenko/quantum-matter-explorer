@@ -7,6 +7,9 @@ const FLOOR_TOP := 640.0
 const START_POSITION := Vector2(210, 595)
 const CHECKPOINT_POSITION := Vector2(1160, 595)
 const PROGRESSION = preload("res://scripts/ProgressionState.gd")
+const ECHO_GHOST = preload("res://scripts/EchoGhost.gd")
+const GATE_OPEN_SECONDS := 4.0
+const ECHO_SWITCH_RANGE := 43.0
 
 @export var persistence_enabled := true
 var progression = PROGRESSION.new()
@@ -18,6 +21,12 @@ var progression = PROGRESSION.new()
 @onready var hazard: Area2D = $Hazard
 @onready var goal: Area2D = $Goal
 @onready var ability_relic: Area2D = $AbilityRelic
+@onready var echo_relic: Area2D = $EchoRelic
+@onready var echo_switch: Area2D = $EchoSwitch
+@onready var echo_gate: StaticBody2D = $EchoGate
+var echo_ghost: Node2D = null
+var gate_open_remaining := 0.0
+var echo_gate_open := false
 var respawn_position := START_POSITION
 var checkpoint_activated := false
 
@@ -45,6 +54,9 @@ func _ready() -> void:
     player.barrier = barrier
     player.additional_barriers.append(barrier2)
     ability_relic.body_entered.connect(_on_relic_collected)
+    echo_relic.body_entered.connect(_on_echo_relic_collected)
+    player.echo_requested.connect(_on_echo_requested)
+    player.echo_result.connect(_on_echo_result)
     checkpoint.body_entered.connect(_on_checkpoint)
     hazard.body_entered.connect(_on_hazard)
     player.tunneling_result.connect(_on_tunneling_result)
@@ -53,10 +65,32 @@ func _ready() -> void:
     if persistence_enabled:
         progression.load_from_path()
     _restore_progression()
-    if player.tunneling_unlocked:
-        _show_status("Progress restored. I: inventory | E: tunnel | F: physics.", 5.0)
+    if player.echoes_unlocked:
+        _show_status("Echoes restored. Press Q to replay motion at the violet switch.", 6.0)
+    elif player.tunneling_unlocked:
+        _show_status("Progress restored. Cross barrier two to find the Echo shard.", 5.0)
     else:
         _show_status("Find the glowing quantum core to unlock tunneling. I: inventory.", 6.0)
+
+
+func _physics_process(delta: float) -> void:
+    gate_open_remaining = maxf(0.0, gate_open_remaining - delta)
+    if is_instance_valid(echo_ghost) and not echo_ghost.is_queued_for_deletion():
+        if echo_ghost.global_position.distance_to(echo_switch.global_position) <= ECHO_SWITCH_RANGE:
+            gate_open_remaining = GATE_OPEN_SECONDS
+    # Never re-enable a collider with the player in its doorway.
+    if echo_gate_open and absf(player.global_position.x - echo_gate.global_position.x) < 42.0:
+        gate_open_remaining = maxf(gate_open_remaining, 0.2)
+    _set_echo_gate_open(gate_open_remaining > 0.0)
+
+
+func _set_echo_gate_open(opened: bool) -> void:
+    if echo_gate_open == opened:
+        return
+    echo_gate_open = opened
+    var collider := echo_gate.get_node("CollisionShape2D") as CollisionShape2D
+    collider.set_deferred("disabled", opened)
+    queue_redraw()
 
 
 func _make_solid(label: String, place: Vector2, size: Vector2) -> void:
@@ -104,6 +138,22 @@ func _draw() -> void:
                 Vector2(640, 573), Vector2(657, 595),
                 Vector2(640, 617), Vector2(623, 595)]), Color("#87d8ff"))
         draw_circle(Vector2(640, 595), 7, Color("#e4fff8"))
+    if not player.echoes_unlocked:
+        draw_circle(Vector2(1570, 595), 35, Color(0.67, 0.48, 1.0, 0.19))
+        draw_arc(Vector2(1570, 595), 27, 0, TAU, 42, Color("#bb91ff"), 3.0)
+        draw_colored_polygon(PackedVector2Array([
+                Vector2(1570, 575), Vector2(1583, 595),
+                Vector2(1570, 615), Vector2(1557, 595)]), Color("#c9a8ff"))
+    draw_rect(Rect2(1580, 627, 60, 10), Color("#74569b"))
+    draw_line(Vector2(1580, 627), Vector2(1640, 627),
+            Color("#e3baff") if echo_gate_open else Color("#ac83db"), 3.0)
+    if echo_gate_open:
+        draw_rect(Rect2(1680, 0, 40, 640), Color(0.45, 0.95, 0.85, 0.10))
+        draw_line(Vector2(1700, 0), Vector2(1700, 640), Color("#70eecb"), 2.0)
+    else:
+        draw_rect(Rect2(1680, 0, 40, 640), Color(0.55, 0.31, 0.86, 0.54))
+        draw_line(Vector2(1680, 0), Vector2(1680, 640), Color("#e3bdff"), 2.0)
+        draw_line(Vector2(1720, 0), Vector2(1720, 640), Color("#e3bdff"), 2.0)
     draw_circle(Vector2(1160, 585), 26, Color(0.31, 0.94, 0.81, 0.22))
     draw_arc(Vector2(1160, 585), 22, 0, TAU, 48,
             Color("#70eecb") if checkpoint_activated else Color("#567e8b"), 3.0)
@@ -160,7 +210,7 @@ func _make_hud() -> void:
     root.add_child(coherence_bar)
     status_text = _make_label(root, "", Vector2(24, 130), Vector2(720, 28),
             17, Color("#e6e2bc"))
-    hint_text = _make_label(root, "A/D MOVE   ·   SPACE JUMP   ·   E TUNNEL   ·   F SCIENCE   ·   I INVENTORY",
+    hint_text = _make_label(root, "A/D MOVE   ·   SPACE JUMP   ·   E TUNNEL   ·   Q ECHO   ·   F SCIENCE   ·   I INVENTORY",
             Vector2(24, 675), Vector2(1210, 30), 16, Color("#bbdce0"))
     var panel := PanelContainer.new()
     panel.name = "SciencePanel"
@@ -227,6 +277,16 @@ func _refresh_science_for(active: Variant) -> void:
             + "or a physical probability budget.  [F] close")
 
 
+func _refresh_echo_science() -> void:
+    science_body.text = ("QMC ECHOES  ·  PLAYBACK PUZZLE\n"
+            + "A violet ghost replays your last ~2 seconds of motion.\n"
+            + "Only an echo can activate the violet switch.\n"
+            + "Quantum Monte Carlo uses statistical sampling to\n"
+            + "estimate observables for quantum systems.\n"
+            + "This replay is NOT QMC, a physical clone, or\n"
+            + "a quantum-mechanical prediction.  [F] close")
+
+
 func _process(delta: float) -> void:
     # Recover from falling outside the playable area.
     if player.global_position.y > 900.0:
@@ -238,14 +298,16 @@ func _process(delta: float) -> void:
     var near: bool = active != null
     var probability: Dictionary = active.transmission() if near else barrier.transmission()
     if win:
-        hint_text.text = "CHAMBER CLEARED  ·  PHASE G3 COMPLETE  ·  I INVENTORY"
+        hint_text.text = "CHAMBER CLEARED  ·  PHASE G4 COMPLETE  ·  I INVENTORY"
     elif not player.tunneling_unlocked:
         hint_text.text = "TUNNELING LOCKED  ·  FIND THE GLOWING CORE  ·  I INVENTORY"
     elif near:
         hint_text.text = ("E TUNNEL  ·  T = %.1f%%" % (100.0 * probability.get("probability", 0.0))) \
                 + "  ·  COST 18 COHERENCE  ·  F SCIENCE  ·  I INVENTORY"
-    else:
-        hint_text.text = "A/D MOVE  ·  SPACE JUMP  ·  E TUNNEL  ·  F SCIENCE  ·  I INVENTORY"
+    elif player.echoes_unlocked and player.global_position.x > 1520.0:
+        hint_text.text = "WALK OVER VIOLET PAD  ·  Q REPLAY (22)  ·  CROSS THE OPEN GATE  ·  I INVENTORY"
+    elif player.tunneling_unlocked:
+        hint_text.text = "A/D MOVE  ·  SPACE JUMP  ·  E TUNNEL  ·  Q ECHO  ·  I INVENTORY"
     var f_pressed := Input.is_physical_key_pressed(KEY_F)
     if f_pressed and not _f_was_pressed:
         science_panel.visible = not science_panel.visible
@@ -266,6 +328,8 @@ func _process(delta: float) -> void:
     _n_was_pressed = n_pressed
     if near:
         _refresh_science_for(active)
+    elif player.echoes_unlocked and player.global_position.x > 1510.0:
+        _refresh_echo_science()
     if _status_time > 0.0:
         _status_time -= delta
         if _status_time <= 0.0 and not win:
@@ -279,27 +343,32 @@ func _show_status(message: String, duration: float = 3.5) -> void:
 
 func _refresh_inventory() -> void:
     var tunneling_status := "UNLOCKED" if player.tunneling_unlocked else "LOCKED"
+    var echo_status := "UNLOCKED" if player.echoes_unlocked else "LOCKED"
     var checkpoint_status := "ACTIVE" if checkpoint_activated else "NOT REACHED"
-    var cleared_status := "YES" if progression.chamber_cleared else "NO"
+    var cleared_status := "YES" if progression.echo_gate_cleared else "NO"
     inventory_body.text = ("QUANTUM ABILITIES  /  DISCOVERY JOURNAL\n\n"
             + "1. QUANTUM TUNNELING  [%s]\n" % tunneling_status
             + "   Cross a barrier using analytical 1D transmission.\n"
             + "   Unlock by collecting the blue quantum core.  [E]\n\n"
-            + "2. QMC ECHOES  [COMING LATER]\n"
-            + "   Proposed gameplay echoes; not physical clones or QMC output.\n\n"
+            + "2. QMC ECHOES  [%s]\n" % echo_status
+            + "   Collect violet shard after barrier two; press [Q].\n"
+            + "   Replay last ~2 s; ghost opens violet gate (22 Coherence).\n"
+            + "   Motion recording only: NOT real QMC or a clone.\n\n"
             + "3. IMAGINARY-TIME REALM  [COMING LATER]\n"
             + "   A future mechanic; imaginary time is mathematical, not travel.\n\n"
-            + "Checkpoint: %s    Chamber cleared: %s\n" % [checkpoint_status, cleared_status]
+            + "Checkpoint: %s    Echo gate cleared: %s\n" % [checkpoint_status, cleared_status]
             + "[I] close    [SHIFT+N] reset local progress")
 
 
 func _restore_progression() -> void:
     player.tunneling_unlocked = progression.is_unlocked(PROGRESSION.TUNNELING)
+    player.echoes_unlocked = progression.is_unlocked(PROGRESSION.ECHOES)
     checkpoint_activated = progression.checkpoint_reached
     respawn_position = CHECKPOINT_POSITION if checkpoint_activated else START_POSITION
     player.global_position = respawn_position
     player.velocity = Vector2.ZERO
     ability_relic.monitoring = not player.tunneling_unlocked
+    echo_relic.monitoring = not player.echoes_unlocked
     _refresh_inventory()
     queue_redraw()
 
@@ -324,9 +393,53 @@ func _on_relic_collected(body: Node2D) -> void:
     queue_redraw()
 
 
+func _on_echo_relic_collected(body: Node2D) -> void:
+    if body != player or player.echoes_unlocked:
+        return
+    if not progression.unlock(PROGRESSION.ECHOES):
+        return
+    player.echoes_unlocked = true
+    echo_relic.set_deferred("monitoring", false)
+    _save_progression()
+    _refresh_inventory()
+    _refresh_echo_science()
+    _show_status("QMC ECHOES UNLOCKED! Walk across the violet pad; press Q near the gate.", 7.0)
+    queue_redraw()
+
+
+func _on_echo_requested(recording: Array) -> void:
+    # Only recorded player positions affect the puzzle; the ghost has no physics body.
+    if is_instance_valid(echo_ghost):
+        echo_ghost.queue_free()
+    var typed_trace: Array[Vector2] = []
+    for sample in recording:
+        if sample is Vector2:
+            typed_trace.append(sample)
+    var ghost := ECHO_GHOST.new()
+    ghost.name = "EchoGhost"
+    ghost.configure(typed_trace)
+    add_child(ghost)
+    echo_ghost = ghost
+
+
+func _on_echo_result(result: Dictionary) -> void:
+    if result.get("spawned", false):
+        _show_status("ECHO DEPLOYED — recent movement replaying (not a quantum clone).", 3.0)
+    else:
+        _show_status(str(result.get("reason", "Echo unavailable.")), 3.0)
+
+
 func _reset_progression() -> void:
     progression.reset()
     player.tunneling_unlocked = false
+    player.echoes_unlocked = false
+    player.echo_history.clear()
+    player.echo_cooldown_remaining = 0.0
+    if is_instance_valid(echo_ghost):
+        echo_ghost.queue_free()
+    echo_ghost = null
+    gate_open_remaining = 0.0
+    _set_echo_gate_open(false)
     player.coherence = player.MAX_COHERENCE
     player.tunnel_cooldown_remaining = 0.0
     player.velocity = Vector2.ZERO
@@ -335,10 +448,11 @@ func _reset_progression() -> void:
     checkpoint_activated = false
     win = false
     ability_relic.set_deferred("monitoring", true)
+    echo_relic.set_deferred("monitoring", true)
     science_panel.visible = false
     _save_progression()
     _refresh_inventory()
-    _show_status("Progress reset. Collect the quantum core to unlock tunneling.", 5.0)
+    _show_status("Progress reset. Collect blue and violet relics to unlock abilities.", 5.0)
     queue_redraw()
 
 
@@ -356,9 +470,10 @@ func _on_goal_reached(body: Node2D) -> void:
         return
     win = true
     progression.chamber_cleared = true
+    progression.echo_gate_cleared = true
     _save_progression()
     _refresh_inventory()
-    _show_status("CHAMBER CLEARED — Two barriers crossed!", 9999.0)
+    _show_status("CHAMBER CLEARED — Tunneling and Echoes mastered!", 9999.0)
 
 
 func _on_checkpoint(body: Node2D) -> void:

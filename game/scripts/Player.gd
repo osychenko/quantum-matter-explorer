@@ -2,6 +2,8 @@ extends CharacterBody2D
 ## Deterministic platform movement plus a separately sampled tunneling action.
 
 signal tunneling_result(outcome: Dictionary)
+signal echo_requested(recording: Array)
+signal echo_result(outcome: Dictionary)
 
 const WALK_SPEED := 285.0
 const ACCELERATION := 2350.0
@@ -16,6 +18,10 @@ const JUMP_SPEED := -530.0
 const GRAVITY := 1400.0
 const MAX_COHERENCE := 100.0
 const REGEN_PER_SECOND := 8.0
+const ECHO_COST := 22.0
+const ECHO_COOLDOWN := 5.0
+const ECHO_RECORD_FRAMES := 120  # ~2 seconds at Godot's default 60 Hz physics tick.
+const ECHO_MIN_FRAMES := 12
 
 var coherence := MAX_COHERENCE
 var barrier: Variant = null
@@ -24,6 +30,10 @@ var coyote_remaining := 0.0
 var jump_buffer_remaining := 0.0
 var tunnel_cooldown_remaining := 0.0
 var tunneling_unlocked := false
+var echoes_unlocked := false
+var echo_cooldown_remaining := 0.0
+var echo_history: Array[Vector2] = []
+var echo_uses := 0
 var rng := RandomNumberGenerator.new()
 var rng_initial_seed: int = 0
 var attempts := 0
@@ -31,6 +41,7 @@ var glow_time := 0.0
 var facing := 1.0
 var _e_was_pressed := false
 var _space_was_pressed := false
+var _q_was_pressed := false
 
 
 func _ready() -> void:
@@ -41,6 +52,7 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
     coherence = minf(MAX_COHERENCE, coherence + REGEN_PER_SECOND * delta)
     tunnel_cooldown_remaining = maxf(0.0, tunnel_cooldown_remaining - delta)
+    echo_cooldown_remaining = maxf(0.0, echo_cooldown_remaining - delta)
     var right_down := Input.is_physical_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)
     var left_down := Input.is_physical_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT)
     var axis := int(right_down) - int(left_down)
@@ -71,6 +83,13 @@ func _physics_process(delta: float) -> void:
     if Input.is_action_just_released("ui_accept") and velocity.y < 0.0:
         velocity.y *= JUMP_CUT_MULTIPLIER
     move_and_slide()
+    echo_history.append(global_position)
+    if echo_history.size() > ECHO_RECORD_FRAMES:
+        echo_history.pop_front()
+    var q_pressed := Input.is_physical_key_pressed(KEY_Q)
+    if q_pressed and not _q_was_pressed:
+        attempt_echo()
+    _q_was_pressed = q_pressed
     var e_pressed := Input.is_physical_key_pressed(KEY_E)
     if e_pressed and not _e_was_pressed:
         attempt_tunneling()
@@ -123,6 +142,34 @@ func attempt_tunneling() -> Dictionary:
             global_position = outcome["destination"]
             velocity = Vector2.ZERO
     tunneling_result.emit(outcome)
+    return outcome
+
+
+func attempt_echo() -> Dictionary:
+    var outcome: Dictionary
+    if not echoes_unlocked:
+        outcome = {"spawned": false, "cost": 0.0,
+                "reason": "Echoes locked: collect the violet shard beyond barrier two."}
+    elif echo_cooldown_remaining > 0.0:
+        outcome = {"spawned": false, "cost": 0.0,
+                "reason": "Echoes are recharging."}
+    elif coherence < ECHO_COST:
+        outcome = {"spawned": false, "cost": 0.0,
+                "reason": "Not enough Coherence for an echo (22 required)."}
+    elif echo_history.size() < ECHO_MIN_FRAMES:
+        outcome = {"spawned": false, "cost": 0.0,
+                "reason": "Move for a moment to record a trajectory."}
+    else:
+        # Keep the typed array intact: GDScript rejects assigning untyped Array literals.
+        var trace: Array[Vector2] = []
+        for point in echo_history:
+            trace.append(point)
+        coherence -= ECHO_COST
+        echo_cooldown_remaining = ECHO_COOLDOWN
+        echo_uses += 1
+        outcome = {"spawned": true, "cost": ECHO_COST, "samples": trace.size()}
+        echo_requested.emit(trace)
+    echo_result.emit(outcome)
     return outcome
 
 

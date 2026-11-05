@@ -5,10 +5,12 @@ extends RefCounted
 const SAVE_PATH := "user://qme_platformer_progress_v1.json"
 const VERSION := 1
 const TUNNELING := "tunneling"
+const ECHOES := "echoes"
 
 var unlocked: Array[String] = []
 var checkpoint_reached := false
 var chamber_cleared := false
+var echo_gate_cleared := false
 
 
 func is_unlocked(ability_id: String) -> bool:
@@ -16,7 +18,7 @@ func is_unlocked(ability_id: String) -> bool:
 
 
 func unlock(ability_id: String) -> bool:
-    if ability_id != TUNNELING or unlocked.has(ability_id):
+    if (ability_id != TUNNELING and ability_id != ECHOES) or unlocked.has(ability_id):
         return false
     unlocked.append(ability_id)
     return true
@@ -26,6 +28,7 @@ func reset() -> void:
     unlocked.clear()
     checkpoint_reached = false
     chamber_cleared = false
+    echo_gate_cleared = false
 
 
 func to_dictionary() -> Dictionary:
@@ -34,6 +37,7 @@ func to_dictionary() -> Dictionary:
         "unlocked": unlocked.duplicate(),
         "checkpoint_reached": checkpoint_reached,
         "chamber_cleared": chamber_cleared,
+        "echo_gate_cleared": echo_gate_cleared,
     }
 
 
@@ -58,6 +62,7 @@ func load_from_path(path: String = SAVE_PATH) -> bool:
     var parse_error := parser.parse(file.get_as_text())
 
     if parse_error != OK:
+        file.close()
         return false
 
     var decoded: Variant = parser.data
@@ -71,8 +76,10 @@ func load_from_path(path: String = SAVE_PATH) -> bool:
     var saved_unlocks: Variant = data.get("unlocked", [])
     var saved_checkpoint: Variant = data.get("checkpoint_reached", false)
     var saved_cleared: Variant = data.get("chamber_cleared", false)
+    # Optional since G3 saves predate the echo-gate puzzle.
+    var saved_echo_gate: Variant = data.get("echo_gate_cleared", false)
     if typeof(saved_unlocks) != TYPE_ARRAY or typeof(saved_checkpoint) != TYPE_BOOL \
-            or typeof(saved_cleared) != TYPE_BOOL:
+            or typeof(saved_cleared) != TYPE_BOOL or typeof(saved_echo_gate) != TYPE_BOOL:
         return false
     # Accept only recognized ability IDs, and only after validating the save.
     reset()
@@ -81,4 +88,5 @@ func load_from_path(path: String = SAVE_PATH) -> bool:
             unlock(ability_id)
     checkpoint_reached = saved_checkpoint
     chamber_cleared = saved_cleared
+    echo_gate_cleared = saved_echo_gate
     return true

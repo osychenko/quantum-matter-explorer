@@ -19,31 +19,45 @@ func check(value: bool, description: String) -> void:
 func run_tests() -> void:
     var state = STATE.new()
     check(not state.is_unlocked(STATE.TUNNELING), "Tunneling starts locked")
-    check(not state.unlock("qmc_echo"), "An unimplemented ability cannot be unlocked")
+    check(not state.unlock("qmc_echo"), "Unknown legacy ID cannot be unlocked")
+    check(state.unlock(STATE.ECHOES), "QMC Echoes unlock is now supported")
+    check(not state.unlock(STATE.ECHOES), "Echoes cannot be unlocked twice")
     check(not state.unlock("imaginary_time"), "Imaginary-time ability is not implemented")
     check(state.unlock(STATE.TUNNELING), "Pickup unlocks tunneling")
     check(not state.unlock(STATE.TUNNELING), "Duplicate pickup has no effect")
-    check(state.unlocked.size() == 1, "Ability IDs remain unique")
+    check(state.unlocked.size() == 2, "Ability IDs remain unique")
     state.checkpoint_reached = true
     state.chamber_cleared = true
+    state.echo_gate_cleared = true
     check(state.save_to_path(TEST_PATH), "Progress writes to an isolated test file")
 
     var loaded = STATE.new()
     check(loaded.load_from_path(TEST_PATH), "Progress restores from disk")
     check(loaded.is_unlocked(STATE.TUNNELING), "Unlock survives restart")
+    check(loaded.is_unlocked(STATE.ECHOES), "Echoes unlock survives restart")
     check(loaded.checkpoint_reached and loaded.chamber_cleared,
             "Checkpoint and chamber completion survive restart")
+    check(loaded.echo_gate_cleared, "G4 gate completion survives restart")
     loaded.reset()
     check(not loaded.is_unlocked(STATE.TUNNELING) and not loaded.checkpoint_reached \
-            and not loaded.chamber_cleared, "Reset clears all progress")
+            and not loaded.chamber_cleared and not loaded.echo_gate_cleared,
+            "Reset clears all progress")
     check(loaded.save_to_path(TEST_PATH), "Reset state is persisted")
 
     var empty_again = STATE.new()
     check(empty_again.load_from_path(TEST_PATH), "Reset save is readable")
-    check(not empty_again.is_unlocked(STATE.TUNNELING), "Reset persists locked state")
+    check(not empty_again.is_unlocked(STATE.TUNNELING)
+            and not empty_again.is_unlocked(STATE.ECHOES), "Reset persists both locked states")
+    # A G3 save has no echo_gate_cleared flag; it must load as not yet solved.
+    var file := FileAccess.open(TEST_PATH, FileAccess.WRITE)
+    if file != null:
+        file.store_string('{"version": 1, "unlocked": ["tunneling"], "checkpoint_reached": true, "chamber_cleared": true}')
+        file.close()
+        check(empty_again.load_from_path(TEST_PATH), "Legacy G3 save remains readable")
+        check(not empty_again.echo_gate_cleared, "Legacy G3 completion does not solve G4 gate")
 
     # A bad save must be rejected without modifying the current state.
-    var file := FileAccess.open(TEST_PATH, FileAccess.WRITE)
+    file = FileAccess.open(TEST_PATH, FileAccess.WRITE)
     check(file != null, "Can write invalid test fixture")
     if file != null:
         file.store_string("{not-json")
