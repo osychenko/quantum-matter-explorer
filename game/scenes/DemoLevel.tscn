@@ -1,9 +1,10 @@
-[gd_scene load_steps=21 format=3]
+[gd_scene load_steps=23 format=3]
 
 [ext_resource type="Script" path="res://scripts/DemoLevel.gd" id="1_level"]
 [ext_resource type="Script" path="res://scripts/Player.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/TunnelBarrier.gd" id="1_barrier"]
 [ext_resource type="Script" path="res://scripts/LevelPlatform.gd" id="1_platform"]
+[ext_resource type="Script" path="res://scripts/StompEnemy.gd" id="1_stomp"]
 [ext_resource type="Script" path="res://scripts/WorldMarker.gd" id="1_marker"]
 
 [sub_resource type="RectangleShape2D" id="Rect_player"]
@@ -50,6 +51,9 @@ size = Vector2(52, 640)
 
 [sub_resource type="RectangleShape2D" id="Rect_SpectralBridge"]
 size = Vector2(240, 18)
+
+[sub_resource type="RectangleShape2D" id="Rect_stomp"]
+size = Vector2(44, 34)
 
 [node name="DemoLevel" type="Node2D"]
 script = ExtResource("1_level")
@@ -113,6 +117,7 @@ position = Vector2(450, 550)
 collision_layer = 1
 collision_mask = 0
 script = ExtResource("1_platform")
+corner_cut_px = 5.0
 dimensions = Vector2(160, 22)
 fill_color = Color(0.137255, 0.258824, 0.341176, 1)
 edge_color = Color(0.545098, 0.827451, 0.819608, 1)
@@ -125,6 +130,7 @@ position = Vector2(1400, 585)
 collision_layer = 1
 collision_mask = 0
 script = ExtResource("1_platform")
+corner_cut_px = 5.0
 dimensions = Vector2(180, 22)
 fill_color = Color(0.137255, 0.258824, 0.341176, 1)
 edge_color = Color(0.545098, 0.827451, 0.819608, 1)
@@ -163,6 +169,7 @@ position = Vector2(2480, 572)
 collision_layer = 1
 collision_mask = 0
 script = ExtResource("1_platform")
+corner_cut_px = 5.0
 dimensions = Vector2(240, 18)
 fill_color = Color(0.188235, 0.431373, 0.407843, 1)
 edge_color = Color(0.552941, 1.000000, 0.811765, 1)
@@ -190,6 +197,15 @@ model_width = 1.0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Barrier2"]
 shape = SubResource("Rect_barrier")
+
+[node name="StompEnemy" type="Area2D" parent="."]
+position = Vector2(760, 623)
+collision_layer = 0
+collision_mask = 4
+script = ExtResource("1_stomp")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="StompEnemy"]
+shape = SubResource("Rect_stomp")
 
 [node name="AbilityRelic" type="Area2D" parent="."]
 position = Vector2(640, 595)

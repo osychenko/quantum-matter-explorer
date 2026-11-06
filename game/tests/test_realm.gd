@@ -32,12 +32,17 @@ func run_tests() -> void:
     check(ground is StaticBody2D, "Ground is a scene-owned physics node")
     check(right_ledge is StaticBody2D, "Right ledge is an editor-movable physics node")
     check(right_ledge.position == Vector2(1400, 585), "Right ledge lowered by 50 px")
-    check(ledge_collider.shape is RectangleShape2D, "Ledge collider is a rectangle")
-    check(ledge_collider.shape.size == right_ledge.dimensions,
-            "Editor dimensions drive collider geometry")
+    check(ledge_collider.shape is ConvexPolygonShape2D,
+            "G9 ledge collision has a flat top and beveled corners")
+    if ledge_collider.shape is ConvexPolygonShape2D:
+        var points: PackedVector2Array = (ledge_collider.shape as ConvexPolygonShape2D).points
+        check(points.size() == 8 and points[0].y == -right_ledge.dimensions.y * 0.5,
+                "Beveled ledge keeps a horizontal top")
     right_ledge.dimensions = Vector2(200, 22)
-    check(ledge_collider.shape.size == Vector2(200, 22),
-            "Resizing through the Inspector property updates collision")
+    if ledge_collider.shape is ConvexPolygonShape2D:
+        var resized: PackedVector2Array = (ledge_collider.shape as ConvexPolygonShape2D).points
+        check(is_equal_approx(resized[1].x, 100.0 - right_ledge.corner_cut_px),
+                "Resizing Inspector dimensions updates convex collision")
     var old_collider_pos: Vector2 = ledge_collider.global_position
     right_ledge.position.y += 25.0
     check(absf(ledge_collider.global_position.y - old_collider_pos.y - 25.0) < 0.01,

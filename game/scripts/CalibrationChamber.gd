@@ -54,6 +54,8 @@ func _ready() -> void:
     player.imaginary_time_unlocked = progression.is_unlocked(PROGRESSION.IMAGINARY_TIME)
     player.global_position = START_POSITION
     player.velocity = Vector2.ZERO
+    $StompEnemy.player_hit.connect(_on_hazard)
+    $StompEnemy.stomped.connect(_on_stomp_enemy)
     checkpoint.body_entered.connect(_on_checkpoint)
     hazard.body_entered.connect(_on_hazard)
     goal.body_entered.connect(_on_goal)
@@ -249,6 +251,11 @@ func _refresh_lab_challenge() -> void:
     else:
         lab.set_challenge_text("PUZZLE: Set theoretical T between 40% and 50%, then click Run 10.\n"
                 + "Tip: E = 0.8, width = 1.0. This is NOT quantum Monte Carlo.")
+
+
+func _on_stomp_enemy(_body: Node2D) -> void:
+    ability_fx.play_event("echo", $StompEnemy.global_position)
+    _show_status("STOMP! Jump on sentinels from above. Side contact is dangerous.")
 
 
 func _show_status(message: String) -> void:

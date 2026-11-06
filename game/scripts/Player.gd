@@ -1,5 +1,5 @@
 extends CharacterBody2D
-## Deterministic platform movement plus a separately sampled tunneling action.
+## G9: tunable, responsive platform motion with preserved quantum abilities.
 
 signal tunneling_result(outcome: Dictionary)
 signal echo_requested(recording: Array)
@@ -7,16 +7,41 @@ signal echo_result(outcome: Dictionary)
 signal realm_result(outcome: Dictionary)
 
 const WALK_SPEED := 285.0
-const ACCELERATION := 2350.0
-const GROUND_FRICTION := 2600.0
-const AIR_ACCELERATION := 1350.0
-const AIR_FRICTION := 650.0
-const COYOTE_TIME := 0.11
+const ACCELERATION := 1700.0
+const GROUND_FRICTION := 2050.0
+const AIR_ACCELERATION := 720.0
+const AIR_FRICTION := 155.0
+const COYOTE_TIME := 0.12
 const JUMP_BUFFER_TIME := 0.12
-const JUMP_CUT_MULTIPLIER := 0.45
+const JUMP_CUT_MULTIPLIER := 0.44
+const FALL_GRAVITY_MULTIPLIER := 1.48
+const EARLY_RELEASE_GRAVITY_MULTIPLIER := 1.65
+const APEX_HANG_GRAVITY_MULTIPLIER := 0.38
+const APEX_HANG_TIME := 0.085
+const APEX_ENTRY_SPEED := 80.0
+const STOMP_BOUNCE_SPEED := -395.0
 const TUNNEL_COOLDOWN := 0.32
-const JUMP_SPEED := -530.0
-const GRAVITY := 1400.0
+const JUMP_SPEED := -560.0
+const GRAVITY := 1450.0
+
+# Editable from the Player node Inspector; default values are deliberately modest.
+@export_group("G9 Movement")
+@export_range(150.0, 450.0, 5.0) var max_run_speed: float = WALK_SPEED
+@export_range(400.0, 4000.0, 50.0) var ground_acceleration: float = ACCELERATION
+@export_range(400.0, 4000.0, 50.0) var ground_deceleration: float = GROUND_FRICTION
+@export_range(100.0, 2500.0, 25.0) var air_acceleration: float = AIR_ACCELERATION
+@export_range(0.0, 1200.0, 25.0) var air_deceleration: float = AIR_FRICTION
+@export_group("G9 Jump")
+@export_range(300.0, 850.0, 10.0) var jump_impulse: float = -JUMP_SPEED
+@export_range(600.0, 2500.0, 50.0) var base_gravity: float = GRAVITY
+@export_range(1.0, 3.0, 0.05) var falling_gravity_scale: float = FALL_GRAVITY_MULTIPLIER
+@export_range(1.0, 3.0, 0.05) var short_hop_gravity_scale: float = EARLY_RELEASE_GRAVITY_MULTIPLIER
+@export_range(0.1, 1.0, 0.05) var apex_gravity_scale: float = APEX_HANG_GRAVITY_MULTIPLIER
+@export_range(0.0, 0.15, 0.005) var apex_hang_seconds: float = APEX_HANG_TIME
+@export_range(0.0, 0.25, 0.01) var coyote_seconds: float = COYOTE_TIME
+@export_range(0.0, 0.25, 0.01) var jump_buffer_seconds: float = JUMP_BUFFER_TIME
+@export_range(0.2, 0.9, 0.05) var jump_release_cut: float = JUMP_CUT_MULTIPLIER
+@export_group("")
 const MAX_COHERENCE := 100.0
 const REGEN_PER_SECOND := 8.0
 const ECHO_COST := 22.0
@@ -32,6 +57,9 @@ var barrier: Variant = null
 var additional_barriers: Array[StaticBody2D] = []
 var coyote_remaining := 0.0
 var jump_buffer_remaining := 0.0
+var apex_hang_remaining := 0.0
+var _apex_used := false
+var _jump_cut_applied := false
 var tunnel_cooldown_remaining := 0.0
 var tunneling_unlocked := false
 var echoes_unlocked := false
@@ -70,32 +98,12 @@ func _physics_process(delta: float) -> void:
     var right_down := Input.is_physical_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)
     var left_down := Input.is_physical_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT)
     var axis := int(right_down) - int(left_down)
-    var on_ground := is_on_floor()
-    if on_ground:
-        coyote_remaining = COYOTE_TIME
-    else:
-        coyote_remaining = maxf(0.0, coyote_remaining - delta)
-    if Input.is_action_just_pressed("ui_accept") or (Input.is_physical_key_pressed(KEY_SPACE) and not _space_was_pressed):
-        jump_buffer_remaining = JUMP_BUFFER_TIME
-    else:
-        jump_buffer_remaining = maxf(0.0, jump_buffer_remaining - delta)
-    var space_pressed := Input.is_physical_key_pressed(KEY_SPACE)
-    _space_was_pressed = space_pressed
-    var acceleration := ACCELERATION if on_ground else AIR_ACCELERATION
-    var friction := GROUND_FRICTION if on_ground else AIR_FRICTION
-    if axis == 0:
-        velocity.x = move_toward(velocity.x, 0.0, friction * delta)
-    else:
-        velocity.x = move_toward(velocity.x, float(axis) * WALK_SPEED, acceleration * delta)
-        facing = float(axis)
-    if not on_ground:
-        velocity.y += GRAVITY * delta
-    if jump_buffer_remaining > 0.0 and coyote_remaining > 0.0:
-        velocity.y = JUMP_SPEED
-        jump_buffer_remaining = 0.0
-        coyote_remaining = 0.0
-    if Input.is_action_just_released("ui_accept") and velocity.y < 0.0:
-        velocity.y *= JUMP_CUT_MULTIPLIER
+    # Press and release must use the same unified source. This fixes the
+    # previous mismatch between physical Space and action ui_accept.
+    var jump_held := Input.is_physical_key_pressed(KEY_SPACE) or Input.is_action_pressed("ui_accept")
+    var jump_pressed := jump_held and not _space_was_pressed
+    _space_was_pressed = jump_held
+    advance_movement(delta, axis, jump_pressed, jump_held, is_on_floor())
     move_and_slide()
     # Animation is purely visual; the CharacterBody2D and collider never scale.
     var grounded_now := is_on_floor()
@@ -103,7 +111,7 @@ func _physics_process(delta: float) -> void:
         _land_squash = 1.0
     _grounded_last_frame = grounded_now
     _land_squash = maxf(0.0, _land_squash - 4.0 * delta)
-    _stride_phase += absf(velocity.x) / WALK_SPEED * 13.0 * delta
+    _stride_phase += absf(velocity.x) / maxf(max_run_speed, 1.0) * 13.0 * delta
     echo_history.append(global_position)
     if echo_history.size() > ECHO_RECORD_FRAMES:
         echo_history.pop_front()
@@ -122,6 +130,86 @@ func _physics_process(delta: float) -> void:
     if glow_time > 0.0:
         glow_time = maxf(0.0, glow_time - delta)
     queue_redraw()
+
+
+func advance_movement(delta: float, axis: int, jump_pressed: bool,
+        jump_held: bool, grounded: bool) -> void:
+    # Separating integration from keyboard input allows deterministic tests.
+    # move_and_slide() stays in _physics_process, using Godot's real collisions.
+    if grounded:
+        coyote_remaining = coyote_seconds
+        _jump_cut_applied = false
+        _apex_used = false
+        apex_hang_remaining = 0.0
+    else:
+        coyote_remaining = maxf(0.0, coyote_remaining - delta)
+
+    if jump_pressed:
+        jump_buffer_remaining = jump_buffer_seconds
+    else:
+        jump_buffer_remaining = maxf(0.0, jump_buffer_remaining - delta)
+
+    var acceleration: float = ground_acceleration if grounded else air_acceleration
+    var deceleration: float = ground_deceleration if grounded else air_deceleration
+    if axis == 0:
+        velocity.x = move_toward(velocity.x, 0.0, deceleration * delta)
+    else:
+        velocity.x = move_toward(velocity.x, float(axis) * max_run_speed,
+                acceleration * delta)
+        facing = float(axis)
+
+    # Prioritize buffered/coyote jump over gravity. Once used, both buffers
+    # clear, preventing a second jump in mid-air.
+    if jump_buffer_remaining > 0.0 and coyote_remaining > 0.0:
+        velocity.y = -jump_impulse
+        jump_buffer_remaining = 0.0
+        coyote_remaining = 0.0
+        _apex_used = false
+        apex_hang_remaining = 0.0
+        _jump_cut_applied = not jump_held
+        if not jump_held:
+            velocity.y *= jump_release_cut
+        return
+
+    if grounded:
+        if velocity.y > 0.0:
+            velocity.y = 0.0
+        return
+
+    # Early release makes a short hop. Apply it ONCE rather than multiplying
+    # the velocity on every frame after the Space key is released.
+    if velocity.y < 0.0 and not jump_held and not _jump_cut_applied:
+        velocity.y *= jump_release_cut
+        _jump_cut_applied = true
+        apex_hang_remaining = 0.0
+
+    var gravity_scale := 1.0
+    if velocity.y >= 0.0:
+        gravity_scale = falling_gravity_scale
+    elif _jump_cut_applied:
+        gravity_scale = short_hop_gravity_scale
+    else:
+        # A brief *gravity reduction*, not a suspension of motion, near apex.
+        # Trigger only once to prevent hovering or repeated slowdowns.
+        if not _apex_used and velocity.y >= -APEX_ENTRY_SPEED:
+            apex_hang_remaining = apex_hang_seconds
+            _apex_used = true
+        if apex_hang_remaining > 0.0:
+            gravity_scale = apex_gravity_scale
+            apex_hang_remaining = maxf(0.0, apex_hang_remaining - delta)
+
+    velocity.y += base_gravity * gravity_scale * delta
+
+
+func stomp_bounce() -> void:
+    # A successful descending attack converts downward momentum into a bounce.
+    velocity.y = STOMP_BOUNCE_SPEED
+    coyote_remaining = 0.0
+    jump_buffer_remaining = 0.0
+    _apex_used = true
+    _jump_cut_applied = true
+    apex_hang_remaining = 0.0
+    glow_time = maxf(glow_time, 0.18)
 
 
 func _nearby_barrier() -> Variant:

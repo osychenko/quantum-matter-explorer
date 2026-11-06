@@ -68,6 +68,8 @@ func _ready() -> void:
     # All ground, ledges, boundaries and gates are editor-managed scene nodes.
     # Their visuals and colliders are driven by LevelPlatform.gd.
     player.barrier = barrier
+    $StompEnemy.player_hit.connect(_on_hazard)
+    $StompEnemy.stomped.connect(_on_stomp_enemy)
     player.additional_barriers.append(barrier2)
     ability_relic.body_entered.connect(_on_relic_collected)
     echo_relic.body_entered.connect(_on_echo_relic_collected)
@@ -410,6 +412,11 @@ func _process(delta: float) -> void:
         _status_time -= delta
         if _status_time <= 0.0 and not win:
             status_text.text = ""
+
+
+func _on_stomp_enemy(_body: Node2D) -> void:
+    ability_fx.play_event("echo", $StompEnemy.global_position)
+    _show_status("STOMP! You defeated the sentinel and bounced upward.", 3.0)
 
 
 func _show_status(message: String, duration: float = 3.5) -> void:
